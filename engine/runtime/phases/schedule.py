@@ -10,7 +10,7 @@ This phase processes scheduled events and determines:
 import logging
 import random
 
-from engine.domain import AgentName, ConversationId
+from engine.domain import AgentName, ConversationId, LocationId
 from engine.services import Scheduler
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -93,6 +93,9 @@ class SchedulePhase(BasePhase):
                 agents_to_act.add(forced)
                 logger.info(f"Forcing turn for {forced}")
 
+        # Filter to one agent per location (random-not-last selection)
+        agents_to_act = self._filter_one_per_location(agents_to_act, ctx, forced)
+
         logger.debug(
             f"Scheduled {len(agents_to_act)} agents to act | "
             f"conversation_speakers={len(conversation_speakers)}"
@@ -144,3 +147,55 @@ class SchedulePhase(BasePhase):
             candidates = list(conv.participants)
 
         return random.choice(candidates) if candidates else None
+
+    def _filter_one_per_location(
+        self,
+        agents_to_act: set[AgentName],
+        ctx: TickContext,
+        forced: AgentName | None,
+    ) -> set[AgentName]:
+        """
+        Filter agents to one per location using random-not-last selection.
+
+        When multiple agents at the same location would act, select only one.
+        Prioritizes forced agents, then uses random selection excluding the
+        last speaker at that location.
+        """
+        if len(agents_to_act) <= 1:
+            return agents_to_act
+
+        # Group candidates by location
+        location_candidates: dict[LocationId, list[AgentName]] = {}
+        for agent_name in agents_to_act:
+            agent = ctx.agents.get(agent_name)
+            if agent:
+                loc = agent.location
+                if loc not in location_candidates:
+                    location_candidates[loc] = []
+                location_candidates[loc].append(agent_name)
+
+        # Filter to one per location
+        final_agents: set[AgentName] = set()
+        for location, candidates in location_candidates.items():
+            if len(candidates) == 1:
+                final_agents.add(candidates[0])
+            else:
+                # If forced agent is at this location, always select them
+                if forced and forced in candidates:
+                    final_agents.add(forced)
+                    logger.debug(f"Forced agent {forced} selected at {location}")
+                    continue
+
+                # Random selection excluding last speaker at this location
+                last_speaker = self._scheduler.get_last_location_speaker(location)
+                choices = [c for c in candidates if c != last_speaker]
+                if not choices:
+                    choices = candidates  # Fall back if all excluded
+                selected = random.choice(choices)
+                final_agents.add(selected)
+                logger.debug(
+                    f"Selected {selected} at {location} "
+                    f"(candidates={candidates}, last={last_speaker})"
+                )
+
+        return final_agents

@@ -22,6 +22,7 @@ from engine.domain.effects import (
     ExpireInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    MoveConversationEffect,
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
     EndConversationEffect,
@@ -227,6 +228,43 @@ class TestLeaveConversationEffect:
         assert effect.type == "leave_conversation"
 
 
+class TestMoveConversationEffect:
+    """Tests for MoveConversationEffect."""
+
+    def test_creation(self):
+        """Test creating a MoveConversationEffect."""
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-001"),
+            to_location=LocationId("garden"),
+        )
+        assert effect.type == "move_conversation"
+        assert effect.agent == "Ember"
+        assert effect.conversation_id == "conv-001"
+        assert effect.to_location == "garden"
+
+    def test_immutability(self):
+        """Test effect is frozen."""
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-001"),
+            to_location=LocationId("garden"),
+        )
+        with pytest.raises(ValidationError):
+            effect.to_location = LocationId("library")  # type: ignore
+
+    def test_serialization_roundtrip(self):
+        """Test serialization and deserialization."""
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-001"),
+            to_location=LocationId("garden"),
+        )
+        data = effect.model_dump()
+        restored = MoveConversationEffect.model_validate(data)
+        assert restored == effect
+
+
 class TestAddConversationTurnEffect:
     """Tests for AddConversationTurnEffect."""
 
@@ -327,6 +365,7 @@ class TestEffectDiscriminatedUnion:
             ExpireInviteEffect,
             JoinConversationEffect,
             LeaveConversationEffect,
+            MoveConversationEffect,
             AddConversationTurnEffect,
             SetNextSpeakerEffect,
             EndConversationEffect,
@@ -339,4 +378,4 @@ class TestEffectDiscriminatedUnion:
             assert type_value not in discriminators, f"Duplicate type: {type_value}"
             discriminators.add(type_value)
 
-        assert len(discriminators) == 15
+        assert len(discriminators) == 16

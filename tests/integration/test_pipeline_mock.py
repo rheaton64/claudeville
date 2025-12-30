@@ -313,6 +313,8 @@ class TestToolCalls:
             AgentName("Bob")
         ].model_copy(update={"location": LocationId("workshop")})
 
+        # Force Alice to act (since Bob is also at workshop, only one can act per tick)
+        test_engine.scheduler.force_next_turn(AgentName("Alice"))
         mock_provider.set_narrative("Alice", "I call out to Bob.")
         mock_provider.set_tool_call(
             "Alice",

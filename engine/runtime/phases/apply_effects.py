@@ -6,15 +6,23 @@ This phase processes all accumulated effects:
 2. Updates context state (for subsequent effect processing within the tick)
 3. Handles conversation lifecycle (create, end)
 4. Handles invite expiry
+5. Handles compaction (ShouldCompactEffect -> CompactionService -> DidCompactEvent)
 
-NOTE: This phase does NOT directly mutate services. It only produces events.
+NOTE: Most of this phase does NOT directly mutate services. It only produces events.
 The EventStore._apply_event method is the single source of truth for state
 updates. After events are committed, VillageEngine._hydrate_from_snapshot()
 syncs services from the updated snapshot.
+
+EXCEPTION: ShouldCompactEffect requires calling CompactionService to send /compact
+to the SDK. This is handled specially in the async _execute method.
 """
 
 import logging
+from typing import TYPE_CHECKING
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from engine.services.compaction import CompactionService
 
 from engine.domain import (
     AgentName,
@@ -43,9 +51,12 @@ from engine.domain import (
     ExpireInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    MoveConversationEffect,
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
     EndConversationEffect,
+    ConversationEndingSeenEffect,
+    ShouldCompactEffect,
     # Events
     AgentMovedEvent,
     AgentMoodChangedEvent,
@@ -64,7 +75,11 @@ from engine.domain import (
     ConversationLeftEvent,
     ConversationTurnEvent,
     ConversationNextSpeakerSetEvent,
+    ConversationMovedEvent,
     ConversationEndedEvent,
+    ConversationEndingUnseenEvent,
+    ConversationEndingSeenEvent,
+    DidCompactEvent,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -82,16 +97,99 @@ class ApplyEffectsPhase(BasePhase):
     - Creates domain events for each effect
     - Updates context state (for subsequent effect processing)
     - Handles conversation lifecycle (create on accept, end on leave)
+    - Handles compaction (ShouldCompactEffect -> CompactionService -> DidCompactEvent)
 
     State updates happen through events only. EventStore._apply_event is the
     single source of truth. Services are hydrated from snapshots after events
     are committed.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._compaction_service: "CompactionService | None" = None
+
+    def set_compaction_service(self, service: "CompactionService | None") -> None:
+        """Set the compaction service for handling ShouldCompactEffect."""
+        self._compaction_service = service
+
     async def _execute(self, ctx: TickContext) -> TickContext:
         """Process all effects and produce events."""
-        # Delegate to sync implementation
-        return self.execute_sync(ctx)
+        # First, run all sync effects
+        new_ctx = self.execute_sync(ctx)
+
+        # Then handle any ShouldCompactEffect effects asynchronously
+        # These were skipped in execute_sync and need async I/O
+        compaction_events: list[DomainEvent] = []
+
+        for effect in ctx.effects:
+            if isinstance(effect, ShouldCompactEffect):
+                event = await self._handle_compaction(effect, ctx)
+                if event:
+                    compaction_events.append(event)
+
+        if compaction_events:
+            new_ctx = new_ctx.with_events(compaction_events)
+
+        return new_ctx
+
+    async def _handle_compaction(
+        self,
+        effect: ShouldCompactEffect,
+        ctx: TickContext,
+    ) -> DidCompactEvent | None:
+        """
+        Handle ShouldCompactEffect - decide whether to compact and execute.
+
+        Decision logic:
+        - critical=True (>= 150K tokens): Always compact
+        - critical=False (100K-150K tokens): Only compact if agent is going to sleep
+        """
+        if not self._compaction_service:
+            logger.warning(
+                f"ShouldCompactEffect for {effect.agent} but no compaction service"
+            )
+            return None
+
+        should_compact = False
+
+        if effect.critical:
+            # Critical threshold (>= 150K) - always compact
+            should_compact = True
+            logger.info(
+                f"COMPACTION_DECISION | {effect.agent} | CRITICAL | "
+                f"tokens={effect.pre_tokens} | compacting=True"
+            )
+        else:
+            # Below critical but above pre-sleep threshold (100K-150K)
+            # Only compact if agent is going to sleep
+            is_going_to_sleep = any(
+                isinstance(e, AgentSleepEffect) and e.agent == effect.agent
+                for e in ctx.effects
+            )
+            should_compact = is_going_to_sleep
+            logger.info(
+                f"COMPACTION_DECISION | {effect.agent} | PRE_SLEEP | "
+                f"tokens={effect.pre_tokens} | sleeping={is_going_to_sleep} | "
+                f"compacting={should_compact}"
+            )
+
+        if not should_compact:
+            return None
+
+        # Execute compaction
+        post_tokens = await self._compaction_service.execute_compact(
+            effect.agent, effect.critical
+        )
+
+        # Create event
+        return DidCompactEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            agent=effect.agent,
+            pre_tokens=effect.pre_tokens,
+            post_tokens=post_tokens,
+            critical=effect.critical,
+        )
 
     def execute_sync(self, ctx: TickContext) -> TickContext:
         """
@@ -149,12 +247,19 @@ class ApplyEffectsPhase(BasePhase):
                 return self._apply_join(effect, ctx)
             case LeaveConversationEffect():
                 return self._apply_leave(effect, ctx)
+            case MoveConversationEffect():
+                return self._apply_move_conversation(effect, ctx)
             case AddConversationTurnEffect():
                 return self._apply_conv_turn(effect, ctx)
             case SetNextSpeakerEffect():
                 return self._apply_set_next_speaker(effect, ctx)
             case EndConversationEffect():
                 return self._apply_end_conversation(effect, ctx)
+            case ConversationEndingSeenEffect():
+                return self._apply_conversation_ending_seen(effect, ctx)
+            case ShouldCompactEffect():
+                # Handled asynchronously in _execute, skip here
+                return [], ctx
             case _:
                 logger.warning(f"Unknown effect type: {type(effect)}")
                 return [], ctx
@@ -342,6 +447,7 @@ class ApplyEffectsPhase(BasePhase):
             tick=ctx.tick,
             timestamp=ctx.timestamp,
             agent=effect.agent,
+            location=effect.location,
             old_last_active_tick=old_tick,
             new_last_active_tick=new_tick,
         )
@@ -390,8 +496,20 @@ class ApplyEffectsPhase(BasePhase):
         ctx: TickContext,
     ) -> tuple[list[DomainEvent], TickContext]:
         """Create a conversation invitation."""
-        # Generate conversation ID
-        conv_id = ConversationId(str(uuid4())[:8])
+        # Check if inviter is already in a conversation at this location
+        # If so, invite to that existing conversation instead of creating a new one
+        existing_conv = None
+        for conv in ctx.conversations.values():
+            if (effect.inviter in conv.participants and
+                conv.location == effect.location):
+                existing_conv = conv
+                break
+
+        if existing_conv:
+            conv_id = existing_conv.id
+        else:
+            # Generate new conversation ID
+            conv_id = ConversationId(str(uuid4())[:8])
 
         # Create invitation
         invitation = Invitation(
@@ -460,9 +578,45 @@ class ApplyEffectsPhase(BasePhase):
                 initial_participants=(invite.inviter, effect.agent),
             ))
 
+            # Add first message as conversation turn if provided
+            if effect.first_message:
+                events.append(ConversationTurnEvent(
+                    tick=ctx.tick,
+                    timestamp=ctx.timestamp,
+                    conversation_id=effect.conversation_id,
+                    speaker=effect.agent,
+                    narrative=effect.first_message,
+                ))
+
             new_ctx = ctx.with_updated_conversation(conv)
         else:
-            new_ctx = ctx
+            # Conversation already exists - join it
+            existing_conv = ctx.conversations[effect.conversation_id]
+            updated_conv = Conversation(
+                **{
+                    **existing_conv.model_dump(),
+                    "participants": existing_conv.participants | {effect.agent},
+                }
+            )
+
+            events.append(ConversationJoinedEvent(
+                tick=ctx.tick,
+                timestamp=ctx.timestamp,
+                conversation_id=effect.conversation_id,
+                agent=effect.agent,
+            ))
+
+            # Add first message as conversation turn if provided
+            if effect.first_message:
+                events.append(ConversationTurnEvent(
+                    tick=ctx.tick,
+                    timestamp=ctx.timestamp,
+                    conversation_id=effect.conversation_id,
+                    speaker=effect.agent,
+                    narrative=effect.first_message,
+                ))
+
+            new_ctx = ctx.with_updated_conversation(updated_conv)
 
         new_ctx = new_ctx.with_removed_invite(effect.agent)
 
@@ -524,14 +678,26 @@ class ApplyEffectsPhase(BasePhase):
             "participants": conv.participants | {effect.agent},
         })
 
-        event = ConversationJoinedEvent(
+        events: list[DomainEvent] = []
+
+        events.append(ConversationJoinedEvent(
             tick=ctx.tick,
             timestamp=ctx.timestamp,
             conversation_id=effect.conversation_id,
             agent=effect.agent,
-        )
+        ))
 
-        return [event], ctx.with_updated_conversation(new_conv)
+        # Add first message as conversation turn if provided
+        if effect.first_message:
+            events.append(ConversationTurnEvent(
+                tick=ctx.tick,
+                timestamp=ctx.timestamp,
+                conversation_id=effect.conversation_id,
+                speaker=effect.agent,
+                narrative=effect.first_message,
+            ))
+
+        return events, ctx.with_updated_conversation(new_conv)
 
     def _apply_leave(
         self,
@@ -545,6 +711,17 @@ class ApplyEffectsPhase(BasePhase):
 
         events: list[DomainEvent] = []
         new_participants = conv.participants - {effect.agent}
+
+        # Add last message as conversation turn BEFORE leaving if provided
+        if effect.last_message:
+            events.append(ConversationTurnEvent(
+                tick=ctx.tick,
+                timestamp=ctx.timestamp,
+                conversation_id=effect.conversation_id,
+                speaker=effect.agent,
+                narrative=effect.last_message,
+                is_departure=True,
+            ))
 
         events.append(ConversationLeftEvent(
             tick=ctx.tick,
@@ -564,6 +741,19 @@ class ApplyEffectsPhase(BasePhase):
                 summary="",  # Would generate summary here
             ))
 
+            # Create unseen ending notifications for remaining participants
+            # (if there was a final message from the leaving agent)
+            if effect.last_message:
+                for remaining in new_participants:
+                    events.append(ConversationEndingUnseenEvent(
+                        tick=ctx.tick,
+                        timestamp=ctx.timestamp,
+                        agent=remaining,
+                        conversation_id=effect.conversation_id,
+                        other_participant=effect.agent,
+                        final_message=effect.last_message,
+                    ))
+
             return events, ctx.with_removed_conversation(conv.id)
         else:
             # Update conversation
@@ -573,6 +763,66 @@ class ApplyEffectsPhase(BasePhase):
             })
 
             return events, ctx.with_updated_conversation(new_conv)
+
+    def _apply_move_conversation(
+        self,
+        effect: MoveConversationEffect,
+        ctx: TickContext,
+    ) -> tuple[list[DomainEvent], TickContext]:
+        """Apply conversation move - moves all participants to new location."""
+        conv = ctx.conversations.get(effect.conversation_id)
+        if not conv:
+            return [], ctx
+
+        from_location = conv.location
+        to_location = effect.to_location
+
+        events: list[DomainEvent] = []
+        new_ctx = ctx
+
+        # Move each participant
+        for participant in conv.participants:
+            agent = new_ctx.agents.get(participant)
+            if not agent:
+                continue
+
+            # Create move event for this participant
+            move_event = AgentMovedEvent(
+                tick=ctx.tick,
+                timestamp=ctx.timestamp,
+                agent=participant,
+                from_location=agent.location,
+                to_location=to_location,
+            )
+            events.append(move_event)
+
+            # Update agent in context
+            new_agent = AgentSnapshot(**{
+                **agent.model_dump(),
+                "location": to_location,
+            })
+            new_ctx = new_ctx.with_updated_agent(new_agent)
+
+        # Create conversation moved event
+        conv_moved_event = ConversationMovedEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            conversation_id=effect.conversation_id,
+            initiated_by=effect.agent,
+            from_location=from_location,
+            to_location=to_location,
+            participants=tuple(conv.participants),
+        )
+        events.append(conv_moved_event)
+
+        # Update conversation location in context
+        new_conv = Conversation(**{
+            **conv.model_dump(),
+            "location": to_location,
+        })
+        new_ctx = new_ctx.with_updated_conversation(new_conv)
+
+        return events, new_ctx
 
     def _apply_conv_turn(
         self,
@@ -651,6 +901,21 @@ class ApplyEffectsPhase(BasePhase):
         )
 
         return [event], ctx.with_removed_conversation(conv.id)
+
+    def _apply_conversation_ending_seen(
+        self,
+        effect: ConversationEndingSeenEffect,
+        ctx: TickContext,
+    ) -> tuple[list[DomainEvent], TickContext]:
+        """Mark a conversation ending as seen by an agent."""
+        event = ConversationEndingSeenEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            agent=effect.agent,
+            conversation_id=effect.conversation_id,
+        )
+
+        return [event], ctx
 
     # =========================================================================
     # Invite expiry

@@ -49,6 +49,10 @@ class AgentPanel(Vertical):
     mood: reactive[str] = reactive("")
     energy: reactive[int] = reactive(100)
     is_sleeping: reactive[bool] = reactive(False)
+    # Compaction tracking
+    token_count: reactive[int] = reactive(0)
+    token_threshold: reactive[int] = reactive(150_000)
+    is_compacting: reactive[bool] = reactive(False)
 
     def __init__(self, agent_name: str, model: str = "", **kwargs):
         super().__init__(**kwargs)
@@ -84,7 +88,7 @@ class AgentPanel(Vertical):
         return text
 
     def _build_status(self) -> Text:
-        """Build the status line: Mood emoji + energy bar."""
+        """Build the status line: Mood emoji + energy bar + token count."""
         text = Text()
 
         # Mood emoji
@@ -97,6 +101,28 @@ class AgentPanel(Vertical):
         energy_empty = 10 - energy_filled
         bar = "\u2588" * energy_filled + "\u2591" * energy_empty
         text.append(f"[{bar}]", style="green")
+
+        # Token count with color coding (only show if we have token data)
+        if self.token_count > 0 or self.is_compacting:
+            text.append(" | ", style="dim")
+
+            if self.is_compacting:
+                text.append("COMPACTING...", style="bold yellow")
+            else:
+                # Format token count (e.g., "45K/150K (30%)")
+                token_k = self.token_count / 1000
+                threshold_k = self.token_threshold / 1000
+                percent = int((self.token_count / self.token_threshold) * 100) if self.token_threshold > 0 else 0
+
+                # Color based on percentage
+                if percent >= 95:
+                    color = "bold red"
+                elif percent >= 80:
+                    color = "yellow"
+                else:
+                    color = "dim cyan"
+
+                text.append(f"{token_k:.0f}K/{threshold_k:.0f}K ({percent}%)", style=color)
 
         return text
 
@@ -130,6 +156,14 @@ class AgentPanel(Vertical):
         """React to sleep state changes."""
         self._refresh_header()
 
+    def watch_token_count(self, token_count: int) -> None:
+        """React to token count changes."""
+        self._refresh_status()
+
+    def watch_is_compacting(self, is_compacting: bool) -> None:
+        """React to compaction state changes."""
+        self._refresh_status()
+
     def watch_is_focused(self, focused: bool) -> None:
         """React to focus state changes."""
         if focused:
@@ -144,6 +178,9 @@ class AgentPanel(Vertical):
         energy: int | None = None,
         model: str | None = None,
         is_sleeping: bool | None = None,
+        token_count: int | None = None,
+        token_threshold: int | None = None,
+        is_compacting: bool | None = None,
     ) -> None:
         """Update agent state in one call."""
         if location is not None:
@@ -157,6 +194,12 @@ class AgentPanel(Vertical):
             self._refresh_header()
         if is_sleeping is not None:
             self.is_sleeping = is_sleeping
+        if token_count is not None:
+            self.token_count = token_count
+        if token_threshold is not None:
+            self.token_threshold = token_threshold
+        if is_compacting is not None:
+            self.is_compacting = is_compacting
 
     # === Streaming Methods ===
 

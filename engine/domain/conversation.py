@@ -15,6 +15,7 @@ class ConversationTurn(BaseModel):
     narrative: str
     tick: int
     timestamp: datetime
+    is_departure: bool = False  # True if speaker left the conversation after this message
 
 class Invitation(BaseModel):
     """A pending invitation to a conversation."""
@@ -42,3 +43,13 @@ class Conversation(BaseModel):
     started_at_tick: int
     created_by: AgentName
     next_speaker: AgentName | None = None
+
+
+class UnseenConversationEnding(BaseModel):
+    """Notification that a conversation ended, not yet seen by this agent."""
+    model_config = ConfigDict(frozen=True)
+
+    conversation_id: ConversationId
+    other_participant: AgentName  # Who left
+    final_message: str | None
+    ended_at_tick: int

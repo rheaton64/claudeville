@@ -240,3 +240,24 @@ class EngineRunner:
         Thread-safe. Non-blocking.
         """
         self._command_queue.put((Command.STOP, {}))
+
+    def run_in_engine_loop(self, coro) -> None:
+        """
+        Run a coroutine in the engine's event loop.
+
+        Thread-safe. Non-blocking - the coroutine runs asynchronously.
+        Useful for running async operations like compaction from the TUI thread.
+
+        Args:
+            coro: A coroutine to run in the engine's event loop
+        """
+        if self._loop is None:
+            logger.warning("Cannot run_in_engine_loop - engine thread not started")
+            return
+
+        # Schedule the coroutine to run in the engine's event loop
+        # This is thread-safe because call_soon_threadsafe is
+        def schedule():
+            asyncio.create_task(coro)
+
+        self._loop.call_soon_threadsafe(schedule)

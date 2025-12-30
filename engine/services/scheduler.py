@@ -13,6 +13,7 @@ class SchedulerState:
     forced_next: AgentName | None
     skip_counts: dict[AgentName, int]
     turn_counts: dict[AgentName, int]
+    last_location_speaker: dict[LocationId, AgentName]
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict for JSON storage."""
@@ -30,6 +31,7 @@ class SchedulerState:
             "forced_next": self.forced_next,
             "skip_counts": dict(self.skip_counts),
             "turn_counts": dict(self.turn_counts),
+            "last_location_speaker": {str(k): v for k, v in self.last_location_speaker.items()},
         }
 
     @classmethod
@@ -50,6 +52,7 @@ class SchedulerState:
             forced_next=data.get("forced_next"),
             skip_counts={AgentName(k): v for k, v in data.get("skip_counts", {}).items()},
             turn_counts={AgentName(k): v for k, v in data.get("turn_counts", {}).items()},
+            last_location_speaker={LocationId(k): AgentName(v) for k, v in data.get("last_location_speaker", {}).items()},
         )
 
 
@@ -91,6 +94,7 @@ class Scheduler:
         self._forced_next: AgentName | None = None
         self._skip_counts: dict[AgentName, int] = {}
         self._turn_counts: dict[AgentName, int] = {}
+        self._last_location_speaker: dict[LocationId, AgentName] = {}
 
     def schedule(self, event: ScheduledEvent) -> None:
         """Schedule a new event."""
@@ -248,6 +252,16 @@ class Scheduler:
         """Get total turn count for an agent."""
         return self._turn_counts.get(agent, 0)
 
+    # --- Location speaker tracking (for one-at-a-time per location) ---
+
+    def record_location_speaker(self, location: LocationId, agent: AgentName) -> None:
+        """Record who spoke last at a location."""
+        self._last_location_speaker[location] = agent
+
+    def get_last_location_speaker(self, location: LocationId) -> AgentName | None:
+        """Get the last speaker at a location."""
+        return self._last_location_speaker.get(location)
+
     # --- State persistence ---
 
     def to_state(self) -> SchedulerState:
@@ -257,6 +271,7 @@ class Scheduler:
             forced_next=self._forced_next,
             skip_counts=dict(self._skip_counts),
             turn_counts=dict(self._turn_counts),
+            last_location_speaker=dict(self._last_location_speaker),
         )
 
     def load_state(self, state: SchedulerState) -> None:
@@ -281,3 +296,4 @@ class Scheduler:
         self._forced_next = state.forced_next
         self._skip_counts = dict(state.skip_counts)
         self._turn_counts = dict(state.turn_counts)
+        self._last_location_speaker = dict(state.last_location_speaker)

@@ -11,6 +11,7 @@ from engine.domain import (
     ConversationTurn,
     Invitation,
     Conversation,
+    UnseenConversationEnding,
 )
 
 
@@ -40,6 +41,93 @@ class TestConversationTurn:
         restored = ConversationTurn.model_validate(data)
         assert restored.speaker == sample_conversation_turn.speaker
         assert restored.narrative == sample_conversation_turn.narrative
+
+    def test_is_departure_default_false(self):
+        """Test is_departure defaults to False."""
+        turn = ConversationTurn(
+            speaker=AgentName("Ember"),
+            narrative="Hello!",
+            tick=1,
+            timestamp=datetime(2024, 6, 15, 10, 0, 0),
+        )
+        assert turn.is_departure is False
+
+    def test_is_departure_can_be_true(self):
+        """Test is_departure can be set to True."""
+        turn = ConversationTurn(
+            speaker=AgentName("Ember"),
+            narrative="Goodbye, I must go!",
+            tick=1,
+            timestamp=datetime(2024, 6, 15, 10, 0, 0),
+            is_departure=True,
+        )
+        assert turn.is_departure is True
+
+    def test_is_departure_serialization_roundtrip(self):
+        """Test is_departure survives serialization."""
+        turn = ConversationTurn(
+            speaker=AgentName("Ember"),
+            narrative="Farewell!",
+            tick=1,
+            timestamp=datetime(2024, 6, 15, 10, 0, 0),
+            is_departure=True,
+        )
+        data = turn.model_dump(mode="json")
+        restored = ConversationTurn.model_validate(data)
+        assert restored.is_departure is True
+
+
+class TestUnseenConversationEnding:
+    """Tests for UnseenConversationEnding model."""
+
+    def test_creation_with_final_message(self):
+        """Test creating an UnseenConversationEnding with final message."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-001"),
+            other_participant=AgentName("Sage"),
+            final_message="Goodbye, friend!",
+            ended_at_tick=5,
+        )
+        assert ending.conversation_id == "conv-001"
+        assert ending.other_participant == "Sage"
+        assert ending.final_message == "Goodbye, friend!"
+        assert ending.ended_at_tick == 5
+
+    def test_creation_without_final_message(self):
+        """Test creating an UnseenConversationEnding without final message."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-002"),
+            other_participant=AgentName("River"),
+            final_message=None,
+            ended_at_tick=3,
+        )
+        assert ending.final_message is None
+
+    def test_immutability(self):
+        """Test that UnseenConversationEnding is frozen."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-001"),
+            other_participant=AgentName("Sage"),
+            final_message="Bye!",
+            ended_at_tick=5,
+        )
+        with pytest.raises(ValidationError):
+            ending.final_message = "Changed"  # type: ignore
+
+    def test_serialization_roundtrip(self):
+        """Test model_dump and model_validate roundtrip."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-001"),
+            other_participant=AgentName("Sage"),
+            final_message="See you later!",
+            ended_at_tick=5,
+        )
+        data = ending.model_dump(mode="json")
+        restored = UnseenConversationEnding.model_validate(data)
+        assert restored.conversation_id == ending.conversation_id
+        assert restored.other_participant == ending.other_participant
+        assert restored.final_message == ending.final_message
+        assert restored.ended_at_tick == ending.ended_at_tick
 
 
 class TestInvitation:

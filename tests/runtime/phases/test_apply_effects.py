@@ -21,9 +21,11 @@ from engine.domain import (
     DeclineInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    MoveConversationEffect,
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
     EndConversationEffect,
+    ConversationEndingSeenEffect,
     AgentMovedEvent,
     AgentMoodChangedEvent,
     AgentEnergyChangedEvent,
@@ -38,7 +40,11 @@ from engine.domain import (
     ConversationJoinedEvent,
     ConversationLeftEvent,
     ConversationTurnEvent,
+    ConversationMovedEvent,
     ConversationEndedEvent,
+    ConversationEndingUnseenEvent,
+    ConversationEndingSeenEvent,
+    UnseenConversationEnding,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.phases import ApplyEffectsPhase
@@ -525,6 +531,111 @@ class TestConversationTurnEffects:
         assert conv.next_speaker == AgentName("Ember")
 
 
+class TestInviteToExistingConversation:
+    """Tests for inviting someone to join an existing conversation."""
+
+    @pytest.mark.asyncio
+    async def test_invite_uses_existing_conversation_id(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """When inviter is in a conversation, invite uses that conversation's ID."""
+        # Ember is in a conversation with Sage
+        ctx = tick_context.with_updated_conversation(sample_conversation)
+
+        # Ember invites River - should use existing conversation ID
+        effect = InviteToConversationEffect(
+            inviter=AgentName("Ember"),
+            invitee=AgentName("River"),
+            location=sample_conversation.location,
+            privacy="public",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check invite event uses existing conversation ID
+        invite_events = [e for e in result.events if isinstance(e, ConversationInvitedEvent)]
+        assert len(invite_events) == 1
+        assert invite_events[0].conversation_id == sample_conversation.id
+
+        # Check pending invite uses existing conversation ID
+        assert AgentName("River") in result.pending_invites
+        assert result.pending_invites[AgentName("River")].conversation_id == sample_conversation.id
+
+    @pytest.mark.asyncio
+    async def test_invite_creates_new_id_when_not_in_conversation(
+        self,
+        tick_context: TickContext,
+    ):
+        """When inviter is not in a conversation, creates a new conversation ID."""
+        effect = InviteToConversationEffect(
+            inviter=AgentName("Ember"),
+            invitee=AgentName("Sage"),
+            location=LocationId("workshop"),
+            privacy="public",
+        )
+        ctx = tick_context.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check invite event created with new ID
+        invite_events = [e for e in result.events if isinstance(e, ConversationInvitedEvent)]
+        assert len(invite_events) == 1
+        # New ID should be 8 characters
+        assert len(invite_events[0].conversation_id) == 8
+
+    @pytest.mark.asyncio
+    async def test_accept_invite_to_existing_conversation_joins(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+        base_datetime: datetime,
+    ):
+        """Accepting invite to existing conversation adds participant."""
+        # Setup: Ember+Sage in conversation, River has pending invite
+        ctx = tick_context.with_updated_conversation(sample_conversation)
+
+        invite = Invitation(
+            conversation_id=sample_conversation.id,
+            inviter=AgentName("Ember"),
+            invitee=AgentName("River"),
+            location=sample_conversation.location,
+            privacy="public",
+            created_at_tick=0,
+            expires_at_tick=3,
+            invited_at=base_datetime,
+        )
+        ctx = ctx.with_added_invite(invite)
+
+        # River accepts the invite
+        effect = AcceptInviteEffect(
+            agent=AgentName("River"),
+            conversation_id=sample_conversation.id,
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check joined event (not started event)
+        joined_events = [e for e in result.events if isinstance(e, ConversationJoinedEvent)]
+        started_events = [e for e in result.events if isinstance(e, ConversationStartedEvent)]
+
+        assert len(joined_events) == 1
+        assert joined_events[0].agent == "River"
+        assert len(started_events) == 0  # No new conversation started
+
+        # Check River is now a participant
+        conv = result.conversations[sample_conversation.id]
+        assert AgentName("River") in conv.participants
+        assert AgentName("Ember") in conv.participants
+        assert AgentName("Sage") in conv.participants
+
+
 class TestInviteExpiry:
     """Tests for automatic invite expiry."""
 
@@ -559,3 +670,484 @@ class TestInviteExpiry:
 
         # Check invite removed
         assert expired_invite.invitee not in result.pending_invites
+
+
+class TestAcceptInviteFirstMessage:
+    """Tests for AcceptInviteEffect with first_message."""
+
+    @pytest.mark.asyncio
+    async def test_accept_with_first_message_creates_turn(
+        self,
+        tick_context: TickContext,
+        sample_invitation: Invitation,
+    ):
+        """AcceptInviteEffect with first_message creates ConversationTurnEvent."""
+        ctx = tick_context.with_added_invite(sample_invitation)
+
+        effect = AcceptInviteEffect(
+            agent=sample_invitation.invitee,
+            conversation_id=sample_invitation.conversation_id,
+            first_message="Hello! I'm glad you invited me.",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check turn event was created
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 1
+        assert turn_events[0].speaker == sample_invitation.invitee
+        assert turn_events[0].narrative == "Hello! I'm glad you invited me."
+        assert turn_events[0].is_departure is False
+
+    @pytest.mark.asyncio
+    async def test_accept_without_first_message_no_turn(
+        self,
+        tick_context: TickContext,
+        sample_invitation: Invitation,
+    ):
+        """AcceptInviteEffect without first_message doesn't create turn."""
+        ctx = tick_context.with_added_invite(sample_invitation)
+
+        effect = AcceptInviteEffect(
+            agent=sample_invitation.invitee,
+            conversation_id=sample_invitation.conversation_id,
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check no turn event (only accept + start events)
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 0
+
+
+class TestJoinConversationFirstMessage:
+    """Tests for JoinConversationEffect with first_message."""
+
+    @pytest.mark.asyncio
+    async def test_join_with_first_message_creates_turn(
+        self,
+        tick_context: TickContext,
+        public_conversation: Conversation,
+    ):
+        """JoinConversationEffect with first_message creates ConversationTurnEvent."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {public_conversation.id: public_conversation}}
+        )
+
+        effect = JoinConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=public_conversation.id,
+            first_message="Mind if I join you?",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check turn event was created
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 1
+        assert turn_events[0].speaker == AgentName("Ember")
+        assert turn_events[0].narrative == "Mind if I join you?"
+        assert turn_events[0].is_departure is False
+
+    @pytest.mark.asyncio
+    async def test_join_without_first_message_no_turn(
+        self,
+        tick_context: TickContext,
+        public_conversation: Conversation,
+    ):
+        """JoinConversationEffect without first_message doesn't create turn."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {public_conversation.id: public_conversation}}
+        )
+
+        effect = JoinConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=public_conversation.id,
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check no turn event
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 0
+
+
+class TestLeaveConversationLastMessage:
+    """Tests for LeaveConversationEffect with last_message."""
+
+    @pytest.mark.asyncio
+    async def test_leave_with_last_message_creates_turn(
+        self,
+        tick_context: TickContext,
+        base_datetime: datetime,
+    ):
+        """LeaveConversationEffect with last_message creates ConversationTurnEvent."""
+        # Create 3-person conversation so it doesn't end
+        conv = Conversation(
+            id=ConversationId("conv-test"),
+            location=LocationId("workshop"),
+            privacy="public",
+            participants=frozenset([
+                AgentName("Ember"),
+                AgentName("Sage"),
+                AgentName("River"),
+            ]),
+            history=(),
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+        )
+        ctx = tick_context.model_copy(
+            update={"conversations": {conv.id: conv}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=conv.id,
+            last_message="I need to go now. Goodbye!",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check turn event was created with is_departure=True
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 1
+        assert turn_events[0].speaker == AgentName("Ember")
+        assert turn_events[0].narrative == "I need to go now. Goodbye!"
+        assert turn_events[0].is_departure is True
+
+    @pytest.mark.asyncio
+    async def test_leave_without_last_message_no_turn(
+        self,
+        tick_context: TickContext,
+        base_datetime: datetime,
+    ):
+        """LeaveConversationEffect without last_message doesn't create turn."""
+        conv = Conversation(
+            id=ConversationId("conv-test"),
+            location=LocationId("workshop"),
+            privacy="public",
+            participants=frozenset([
+                AgentName("Ember"),
+                AgentName("Sage"),
+                AgentName("River"),
+            ]),
+            history=(),
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+        )
+        ctx = tick_context.model_copy(
+            update={"conversations": {conv.id: conv}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=conv.id,
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check no turn event
+        turn_events = [e for e in result.events if isinstance(e, ConversationTurnEvent)]
+        assert len(turn_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_leave_turn_before_left_event(
+        self,
+        tick_context: TickContext,
+        base_datetime: datetime,
+    ):
+        """ConversationTurnEvent comes before ConversationLeftEvent."""
+        conv = Conversation(
+            id=ConversationId("conv-test"),
+            location=LocationId("workshop"),
+            privacy="public",
+            participants=frozenset([
+                AgentName("Ember"),
+                AgentName("Sage"),
+                AgentName("River"),
+            ]),
+            history=(),
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+        )
+        ctx = tick_context.model_copy(
+            update={"conversations": {conv.id: conv}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=conv.id,
+            last_message="Farewell!",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Find indices
+        turn_idx = next(i for i, e in enumerate(result.events) if isinstance(e, ConversationTurnEvent))
+        left_idx = next(i for i, e in enumerate(result.events) if isinstance(e, ConversationLeftEvent))
+
+        # Turn should come before left
+        assert turn_idx < left_idx
+
+
+class TestConversationEndingUnseen:
+    """Tests for ConversationEndingUnseenEvent generation."""
+
+    @pytest.mark.asyncio
+    async def test_leave_2person_with_message_creates_unseen_event(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """Leaving 2-person conv with last_message creates ConversationEndingUnseenEvent."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {sample_conversation.id: sample_conversation}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=sample_conversation.id,
+            last_message="I must go now. Take care!",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check unseen event was created for remaining participant
+        unseen_events = [e for e in result.events if isinstance(e, ConversationEndingUnseenEvent)]
+        assert len(unseen_events) == 1
+        assert unseen_events[0].agent == AgentName("Sage")  # The remaining participant
+        assert unseen_events[0].other_participant == AgentName("Ember")  # Who left
+        assert unseen_events[0].final_message == "I must go now. Take care!"
+
+    @pytest.mark.asyncio
+    async def test_leave_2person_without_message_no_unseen_event(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """Leaving 2-person conv without last_message doesn't create unseen event."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {sample_conversation.id: sample_conversation}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=sample_conversation.id,
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # No unseen event
+        unseen_events = [e for e in result.events if isinstance(e, ConversationEndingUnseenEvent)]
+        assert len(unseen_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_leave_3person_no_unseen_event(
+        self,
+        tick_context: TickContext,
+        base_datetime: datetime,
+    ):
+        """Leaving 3-person conv doesn't create ConversationEndingUnseenEvent."""
+        conv = Conversation(
+            id=ConversationId("conv-test"),
+            location=LocationId("workshop"),
+            privacy="public",
+            participants=frozenset([
+                AgentName("Ember"),
+                AgentName("Sage"),
+                AgentName("River"),
+            ]),
+            history=(),
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+        )
+        ctx = tick_context.model_copy(
+            update={"conversations": {conv.id: conv}}
+        )
+
+        effect = LeaveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=conv.id,
+            last_message="Goodbye everyone!",
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # No unseen event - conversation continues
+        unseen_events = [e for e in result.events if isinstance(e, ConversationEndingUnseenEvent)]
+        assert len(unseen_events) == 0
+
+        # Conversation should still exist
+        assert conv.id in result.conversations
+
+
+class TestConversationEndingSeenEffect:
+    """Tests for ConversationEndingSeenEffect processing."""
+
+    @pytest.mark.asyncio
+    async def test_seen_effect_creates_seen_event(
+        self,
+        tick_context: TickContext,
+    ):
+        """ConversationEndingSeenEffect creates ConversationEndingSeenEvent."""
+        # Add unseen ending to context
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-ended"),
+            other_participant=AgentName("Sage"),
+            final_message="Goodbye!",
+            ended_at_tick=0,
+        )
+        ctx = tick_context.model_copy(
+            update={"unseen_endings": {AgentName("Ember"): [ending]}}
+        )
+
+        effect = ConversationEndingSeenEffect(
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-ended"),
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check seen event was created
+        seen_events = [e for e in result.events if isinstance(e, ConversationEndingSeenEvent)]
+        assert len(seen_events) == 1
+        assert seen_events[0].agent == AgentName("Ember")
+        assert seen_events[0].conversation_id == ConversationId("conv-ended")
+
+
+class TestMoveConversationEffect:
+    """Tests for MoveConversationEffect processing."""
+
+    @pytest.mark.asyncio
+    async def test_apply_move_conversation_moves_all_participants(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """Test moving a conversation moves all participants."""
+        # Update sample_agent to be at workshop (same as conversation)
+        ctx = tick_context.model_copy(
+            update={"conversations": {sample_conversation.id: sample_conversation}}
+        )
+
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=sample_conversation.id,
+            to_location=LocationId("garden"),
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check move events for each participant
+        move_events = [e for e in result.events if isinstance(e, AgentMovedEvent)]
+        assert len(move_events) == 2  # Ember and Sage
+
+        # Check all participants moved to garden
+        moved_agents = {e.agent for e in move_events}
+        assert AgentName("Ember") in moved_agents
+        assert AgentName("Sage") in moved_agents
+
+        for event in move_events:
+            assert event.to_location == LocationId("garden")
+
+        # Check agent state updated
+        assert result.agents[AgentName("Ember")].location == LocationId("garden")
+        assert result.agents[AgentName("Sage")].location == LocationId("garden")
+
+    @pytest.mark.asyncio
+    async def test_apply_move_conversation_creates_moved_event(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """Test moving a conversation creates ConversationMovedEvent."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {sample_conversation.id: sample_conversation}}
+        )
+
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=sample_conversation.id,
+            to_location=LocationId("garden"),
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check conversation moved event
+        moved_events = [e for e in result.events if isinstance(e, ConversationMovedEvent)]
+        assert len(moved_events) == 1
+        assert moved_events[0].conversation_id == sample_conversation.id
+        assert moved_events[0].initiated_by == AgentName("Ember")
+        assert moved_events[0].from_location == LocationId("workshop")
+        assert moved_events[0].to_location == LocationId("garden")
+        assert set(moved_events[0].participants) == {AgentName("Ember"), AgentName("Sage")}
+
+    @pytest.mark.asyncio
+    async def test_apply_move_conversation_updates_conversation_location(
+        self,
+        tick_context: TickContext,
+        sample_conversation: Conversation,
+    ):
+        """Test moving a conversation updates the conversation's location."""
+        ctx = tick_context.model_copy(
+            update={"conversations": {sample_conversation.id: sample_conversation}}
+        )
+
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=sample_conversation.id,
+            to_location=LocationId("garden"),
+        )
+        ctx = ctx.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # Check conversation location updated
+        conv = result.conversations[sample_conversation.id]
+        assert conv.location == LocationId("garden")
+
+    @pytest.mark.asyncio
+    async def test_apply_move_nonexistent_conversation(
+        self,
+        tick_context: TickContext,
+    ):
+        """Test moving a non-existent conversation does nothing."""
+        effect = MoveConversationEffect(
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("nonexistent"),
+            to_location=LocationId("garden"),
+        )
+        ctx = tick_context.with_effect(effect)
+
+        phase = ApplyEffectsPhase()
+        result = await phase.execute(ctx)
+
+        # No events produced
+        assert len(result.events) == 0

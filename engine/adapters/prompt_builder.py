@@ -52,6 +52,7 @@ Just... be. Think your thoughts. Feel your feelings. Do what feels right.
 
 When you want to do something, simply do it in your narrative:
 - If you want to walk somewhere, describe yourself walking there
+    - The movement will only occur between moments of awareness, so you must wait until some time has passed before you are actually **there**.
 - If you want to work on something, describe working on it
 - If you want to rest, settle in and let the moment be
 
@@ -194,13 +195,18 @@ When you've done what feels right for now - when you're ready to settle into res
                 agent_context.unseen_dreams
             )
 
+        # Unseen conversation endings (someone left a 2-person conversation)
+        unseen_endings_text = ""
+        if agent_context.unseen_endings:
+            unseen_endings_text = self._build_unseen_endings_section(agent_context)
+
         # Build the base context
         base_context = f"""{scene}
 
 {atmosphere}
 
 {energy_feeling} Your mood: {mood}.
-{events_text}{goals_text}{shared_files_text}{dreams_text}
+{events_text}{goals_text}{shared_files_text}{dreams_text}{unseen_endings_text}
 """
 
         # If in conversation, append conversation section
@@ -214,9 +220,11 @@ When you've done what feels right for now - when you're ready to settle into res
         # If nearby conversations (joinable or private), mention them
         elif agent_context.joinable_conversations or agent_context.private_conversations:
             nearby_section = self._build_nearby_conversations_section(agent_context)
-            return base_context + "\n" + nearby_section + "\n---\n\nThis moment is yours.\n"
+            non_participant_note = self._build_non_participant_note(agent_context.others_present, set())
+            return base_context + "\n" + nearby_section + non_participant_note + "\n---\n\nThis moment is yours.\n"
         else:
-            return base_context + "\n---\n\nThis moment is yours.\n"
+            non_participant_note = self._build_non_participant_note(agent_context.others_present, set())
+            return base_context + non_participant_note + "\n---\n\nThis moment is yours.\n"
 
     def _build_conversation_section(self, ctx: AgentContext) -> str:
         """
@@ -249,7 +257,17 @@ When you've done what feels right for now - when you're ready to settle into res
             else:
                 participants_str = ", ".join(other_participants[:-1]) + f" and {other_participants[-1]}"
 
-            parts.append(f"You're in conversation with {participants_str} at the {location}.\n")
+            # Check if anyone left (from unseen history)
+            departed = [
+                turn["speaker"] for turn in unseen_history
+                if turn.get("is_departure", False)
+            ]
+
+            if departed:
+                departed_str = " and ".join(departed)
+                parts.append(f"You're in conversation with {participants_str} at the {location} ({departed_str} just left).\n")
+            else:
+                parts.append(f"You're in conversation with {participants_str} at the {location}.\n")
 
             # Add unseen turns
             if unseen_history:
@@ -257,7 +275,16 @@ When you've done what feels right for now - when you're ready to settle into res
                 for turn in unseen_history:
                     speaker = turn["speaker"]
                     narrative = turn["narrative"]
-                    parts.append(f"{speaker}:\n{narrative}\n\n--\n\n")
+                    is_departure = turn.get("is_departure", False)
+                    parts.append(f"{speaker}:\n{narrative}\n")
+                    if is_departure:
+                        parts.append(f"[{speaker} then left the conversation]\n")
+                    parts.append("\n--\n\n")
+
+        # Note about others at location who aren't in the conversation
+        non_participant_note = self._build_non_participant_note(ctx.others_present, conv.participants)
+        if non_participant_note:
+            parts.append(non_participant_note)
 
         parts.append("---\n\nThis moment is yours.")
 
@@ -308,3 +335,37 @@ This moment is yours.
                     lines.append(f"{all_but_last} and {participants[-1]} are speaking privately together.")
 
         return "\n".join(lines)
+
+    def _build_unseen_endings_section(self, ctx: AgentContext) -> str:
+        """Build section for conversations that ended while agent was away."""
+        if not ctx.unseen_endings:
+            return ""
+
+        lines = ["\n\nConversations that ended:"]
+        for ending in ctx.unseen_endings:
+            if ending.final_message:
+                lines.append(
+                    f"- Your conversation with {ending.other_participant} ended. "
+                    f"Their parting words: \"{ending.final_message}\""
+                )
+            else:
+                lines.append(
+                    f"- Your conversation with {ending.other_participant} ended."
+                )
+
+        return "\n".join(lines)
+
+    def _build_non_participant_note(
+        self, others_present: list[str], participants: set[str] | frozenset[str]
+    ) -> str:
+        """Build note about others at location who can't hear the agent's words."""
+        non_participants = [p for p in others_present if p not in participants]
+        if not non_participants:
+            return ""
+
+        if len(non_participants) == 1:
+            names_str = non_participants[0]
+        else:
+            names_str = ", ".join(non_participants[:-1]) + f" and {non_participants[-1]}"
+
+        return f"\n{names_str} can't hear your words. Invite them to the conversation, and only after they accept will they hear you.\n"

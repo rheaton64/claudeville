@@ -26,6 +26,7 @@ from engine.domain.events import (
     ConversationLeftEvent,
     ConversationTurnEvent,
     ConversationNextSpeakerSetEvent,
+    ConversationMovedEvent,
     ConversationEndedEvent,
     WorldEventOccurred,
     WeatherChangedEvent,
@@ -293,6 +294,57 @@ class TestConversationNextSpeakerSetEvent:
         assert event.type == "conversation_next_speaker_set"
 
 
+class TestConversationMovedEvent:
+    """Tests for ConversationMovedEvent."""
+
+    def test_creation(self, base_tick: int, base_timestamp: datetime):
+        """Test creating a ConversationMovedEvent."""
+        event = ConversationMovedEvent(
+            tick=base_tick,
+            timestamp=base_timestamp,
+            conversation_id=ConversationId("conv-001"),
+            initiated_by=AgentName("Ember"),
+            from_location=LocationId("workshop"),
+            to_location=LocationId("garden"),
+            participants=(AgentName("Ember"), AgentName("Sage")),
+        )
+        assert event.type == "conversation_moved"
+        assert event.initiated_by == "Ember"
+        assert event.from_location == "workshop"
+        assert event.to_location == "garden"
+        assert len(event.participants) == 2
+
+    def test_immutability(self, base_tick: int, base_timestamp: datetime):
+        """Test event is frozen."""
+        event = ConversationMovedEvent(
+            tick=base_tick,
+            timestamp=base_timestamp,
+            conversation_id=ConversationId("conv-001"),
+            initiated_by=AgentName("Ember"),
+            from_location=LocationId("workshop"),
+            to_location=LocationId("garden"),
+            participants=(AgentName("Ember"), AgentName("Sage")),
+        )
+        with pytest.raises(ValidationError):
+            event.to_location = LocationId("library")  # type: ignore
+
+    def test_serialization_roundtrip(self, base_tick: int, base_timestamp: datetime):
+        """Test serialization and deserialization."""
+        event = ConversationMovedEvent(
+            tick=base_tick,
+            timestamp=base_timestamp,
+            conversation_id=ConversationId("conv-001"),
+            initiated_by=AgentName("Ember"),
+            from_location=LocationId("workshop"),
+            to_location=LocationId("garden"),
+            participants=(AgentName("Ember"), AgentName("Sage")),
+        )
+        data = event.model_dump(mode="json")
+        restored = ConversationMovedEvent.model_validate(data)
+        assert restored.conversation_id == event.conversation_id
+        assert restored.to_location == event.to_location
+
+
 class TestConversationEndedEvent:
     """Tests for ConversationEndedEvent."""
 
@@ -413,6 +465,7 @@ class TestDomainEventDiscriminatedUnion:
             ConversationLeftEvent,
             ConversationTurnEvent,
             ConversationNextSpeakerSetEvent,
+            ConversationMovedEvent,
             ConversationEndedEvent,
             WorldEventOccurred,
             WeatherChangedEvent,
@@ -424,7 +477,7 @@ class TestDomainEventDiscriminatedUnion:
             assert type_value not in discriminators, f"Duplicate type: {type_value}"
             discriminators.add(type_value)
 
-        assert len(discriminators) == 18
+        assert len(discriminators) == 19
 
     def test_serialization_roundtrip(self, base_tick: int, base_timestamp: datetime):
         """Test serialization and deserialization of various events."""

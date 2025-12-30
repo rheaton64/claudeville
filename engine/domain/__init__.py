@@ -2,7 +2,7 @@ from .types import AgentName, LocationId, ConversationId
 from .time import TimePeriod, TimeSnapshot
 from .agent import AgentSnapshot, AgentLLMModel
 from .world import Weather, Location, WorldSnapshot
-from .conversation import ConversationTurn, Invitation, Conversation, INVITE_EXPIRY_TICKS
+from .conversation import ConversationTurn, Invitation, Conversation, UnseenConversationEnding, INVITE_EXPIRY_TICKS
 from .effects import (
     Effect,
     MoveAgentEffect,
@@ -19,9 +19,12 @@ from .effects import (
     ExpireInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    MoveConversationEffect,
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
     EndConversationEffect,
+    ConversationEndingSeenEffect,
+    ShouldCompactEffect,
 )
 from .events import (
     DomainEvent,
@@ -42,9 +45,13 @@ from .events import (
     ConversationLeftEvent,
     ConversationTurnEvent,
     ConversationNextSpeakerSetEvent,
+    ConversationMovedEvent,
     ConversationEndedEvent,
+    ConversationEndingUnseenEvent,
+    ConversationEndingSeenEvent,
     WorldEventOccurred,
     WeatherChangedEvent,
+    DidCompactEvent,
 )
 
 __all__ = [
@@ -61,6 +68,7 @@ __all__ = [
     "ConversationTurn",
     "Invitation",
     "Conversation",
+    "UnseenConversationEnding",
     "INVITE_EXPIRY_TICKS",
     "Effect",
     "MoveAgentEffect",
@@ -77,9 +85,12 @@ __all__ = [
     "ExpireInviteEffect",
     "JoinConversationEffect",
     "LeaveConversationEffect",
+    "MoveConversationEffect",
     "AddConversationTurnEffect",
     "SetNextSpeakerEffect",
     "EndConversationEffect",
+    "ConversationEndingSeenEffect",
+    "ShouldCompactEffect",
     "DomainEvent",
     "AgentMovedEvent",
     "AgentMoodChangedEvent",
@@ -98,7 +109,11 @@ __all__ = [
     "ConversationLeftEvent",
     "ConversationTurnEvent",
     "ConversationNextSpeakerSetEvent",
+    "ConversationMovedEvent",
     "ConversationEndedEvent",
+    "ConversationEndingUnseenEvent",
+    "ConversationEndingSeenEvent",
     "WorldEventOccurred",
     "WeatherChangedEvent",
+    "DidCompactEvent",
 ]

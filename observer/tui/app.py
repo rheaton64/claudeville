@@ -22,6 +22,7 @@ from .screens import (
     EventDialog, DreamDialog, WeatherDialog,
     ForceAgentTurnDialog, SkipTurnsDialog,
     ConfirmEndConversationDialog, ManualObservationDialog,
+    CompactDialog,
 )
 from engine.observer.api import (
     ObserverError, AgentNotFoundError, InvalidLocationError, ConversationError,
@@ -60,6 +61,7 @@ class ClaudeVilleTUI(App):
         Binding("k", "show_skip_dialog", "Skip", show=True),
         Binding("c", "end_conversation", "End Conv", show=True),
         Binding("i", "show_observation_dialog", "Observe", show=True),
+        Binding("x", "show_compact_dialog", "Compact", show=True),
         # Focus controls
         Binding("1", "focus_agent('Ember')", ""),
         Binding("2", "focus_agent('Sage')", ""),
@@ -309,6 +311,44 @@ class ClaudeVilleTUI(App):
                     mood=snapshot.mood,
                     energy=snapshot.energy,
                 )
+        elif event_type == "token_update":
+            # Update token count display
+            # Note: tracer emits "tokens", not "token_count"
+            token_count = data.get("tokens", 0)
+            threshold = data.get("threshold", 150_000)
+            panel.update_agent_state(
+                token_count=token_count,
+                token_threshold=threshold,
+            )
+        elif event_type == "compaction_start":
+            # Show compacting indicator
+            panel.update_agent_state(is_compacting=True)
+            # Add event to feed
+            pre_tokens = data.get("pre_tokens", 0)
+            critical = data.get("critical", False)
+            events_feed = self.query_one(EventsFeed)
+            threshold_type = "critical" if critical else "pre-sleep"
+            events_feed.add_simple_event(
+                self.engine.tick,
+                f"[Compaction] {agent_name} context compacting ({threshold_type}, {pre_tokens/1000:.0f}K tokens)",
+                "system"
+            )
+        elif event_type == "compaction_end":
+            # Clear compacting indicator and update token count
+            pre_tokens = data.get("pre_tokens", 0)
+            post_tokens = data.get("post_tokens", 0)
+            panel.update_agent_state(
+                is_compacting=False,
+                token_count=post_tokens,
+            )
+            # Add completion event to feed
+            saved = pre_tokens - post_tokens
+            events_feed = self.query_one(EventsFeed)
+            events_feed.add_simple_event(
+                self.engine.tick,
+                f"[Compaction] {agent_name} complete ({pre_tokens/1000:.0f}K → {post_tokens/1000:.0f}K, saved {saved/1000:.0f}K)",
+                "system"
+            )
 
     # === Actions ===
 
@@ -586,3 +626,51 @@ class ClaudeVilleTUI(App):
 
         # Refresh UI state
         self._refresh_all_state()
+
+    # === Manual Compaction ===
+
+    def action_show_compact_dialog(self) -> None:
+        """Show dialog to force compaction for an agent."""
+        agent_names = list(self.engine.agents.keys())
+        # Get current compaction state for display
+        compaction_states = self.engine.observer.get_all_agents_compaction_state()
+        self.push_screen(CompactDialog(agent_names, compaction_states), self._handle_compact_result)
+
+    def _handle_compact_result(self, result: str | None) -> None:
+        """Handle the result from the compact dialog."""
+        if not result:
+            return
+
+        agent_name = result
+        events_feed = self.query_one(EventsFeed)
+
+        # Check if compaction service is available
+        if not self.engine.compaction_service:
+            events_feed.add_simple_event(
+                self.engine.tick,
+                "[Error] Compaction service not available",
+                "system"
+            )
+            return
+
+        # Run compaction in a worker since it's async
+        async def do_compact():
+            try:
+                compact_result = await self.engine.observer.do_force_compact(agent_name)
+                if compact_result:
+                    self.call_from_thread(
+                        events_feed.add_simple_event,
+                        self.engine.tick,
+                        f"[Compaction] {agent_name} manually compacted ({compact_result['pre_tokens']/1000:.0f}K → {compact_result['post_tokens']/1000:.0f}K)",
+                        "system"
+                    )
+            except AgentNotFoundError as e:
+                self.call_from_thread(
+                    events_feed.add_simple_event,
+                    self.engine.tick,
+                    f"[Error] {e}",
+                    "system"
+                )
+
+        # Run via the engine's event loop (via runner)
+        self._runner.run_in_engine_loop(do_compact())

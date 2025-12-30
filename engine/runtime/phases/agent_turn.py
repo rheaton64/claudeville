@@ -26,6 +26,7 @@ from engine.domain import (
     ConversationId,
     Conversation,
     Invitation,
+    UnseenConversationEnding,
     DomainEvent,
     Effect,
     InviteToConversationEffect,
@@ -33,9 +34,12 @@ from engine.domain import (
     DeclineInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    MoveConversationEffect,
+    ConversationEndingSeenEffect,
     WorldEventOccurred,
     WeatherChangedEvent,
     UpdateLastActiveTickEffect,
+    ShouldCompactEffect,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -43,6 +47,7 @@ from engine.runtime.interpreter import AgentTurnResult
 
 if TYPE_CHECKING:
     from engine.storage import EventStore
+    from engine.services.compaction import CompactionService
 
 
 logger = logging.getLogger(__name__)
@@ -87,6 +92,9 @@ class AgentContext:
 
     # Dreams since the last time this agent acted
     unseen_dreams: list[str] | None = None
+
+    # Unseen conversation endings (other participant left with a final message)
+    unseen_endings: list[UnseenConversationEnding] | None = None
 
 
 # =============================================================================
@@ -273,6 +281,50 @@ def process_leave_conversation(tool_input: dict, ctx: ToolContext) -> list[Effec
     )]
 
 
+def process_move_conversation(tool_input: dict, ctx: ToolContext) -> list[Effect]:
+    """Process move_conversation tool call.
+
+    Moves the entire conversation group to a new location.
+    All participants will move together.
+    """
+    destination = tool_input.get("destination")
+    if not destination:
+        logger.warning(f"Invalid move_conversation: {ctx.agent_name} - destination is required")
+        return []
+
+    to_location = LocationId(destination)
+
+    # Find agent's current conversation
+    convs = [
+        c for c in ctx.tick_context.conversations.values()
+        if ctx.agent_name in c.participants
+    ]
+    if not convs:
+        logger.warning(f"Invalid move_conversation: {ctx.agent_name} not in any conversation")
+        return []
+
+    conv = convs[0]  # Take first (agents should only be in one active conv)
+
+    # Validate destination is connected to current location
+    current_location = ctx.tick_context.agents[ctx.agent_name].location
+    world = ctx.tick_context.world
+    current_loc_obj = world.locations.get(current_location)
+
+    if not current_loc_obj or to_location not in current_loc_obj.connections:
+        available = list(current_loc_obj.connections) if current_loc_obj else []
+        logger.warning(
+            f"Invalid move_conversation: {ctx.agent_name} cannot move to {destination}. "
+            f"Connected locations: {available}"
+        )
+        return []
+
+    return [MoveConversationEffect(
+        agent=ctx.agent_name,
+        conversation_id=conv.id,
+        to_location=to_location,
+    )]
+
+
 # =============================================================================
 # Register Conversation Tools
 # =============================================================================
@@ -310,7 +362,10 @@ register_conversation_tool(
 
 register_conversation_tool(
     name="accept_invite",
-    description="Accept a pending conversation invitation from another agent.",
+    description=(
+        "Accept a pending conversation invitation from another agent. "
+        "Anything you write after this tool call becomes your first words in the conversation."
+    ),
     input_schema={
         "type": "object",
         "properties": {},
@@ -334,7 +389,8 @@ register_conversation_tool(
     name="join_conversation",
     description=(
         "Join a public conversation happening at your location. "
-        "Specify the name of someone already in the conversation."
+        "Specify the name of someone already in the conversation. "
+        "Anything you write after this tool call becomes your first words in the conversation."
     ),
     input_schema={
         "type": "object",
@@ -351,12 +407,36 @@ register_conversation_tool(
 
 register_conversation_tool(
     name="leave_conversation",
-    description="Leave the conversation you're currently in.",
+    description=(
+        "Leave the conversation you're currently in. "
+        "Anything you wrote before this tool call becomes your parting words."
+    ),
     input_schema={
         "type": "object",
         "properties": {},
     },
     processor=process_leave_conversation,
+)
+
+register_conversation_tool(
+    name="move_conversation",
+    description=(
+        "Move the entire conversation to a new location. "
+        "All participants travel together to the destination. "
+        "The destination must be connected to your current location. "
+        "Consider checking that everyone is ready to move first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "destination": {
+                "type": "string",
+                "description": "The location to move to (must be connected to current location)",
+            },
+        },
+        "required": ["destination"],
+    },
+    processor=process_move_conversation,
 )
 
 
@@ -434,6 +514,7 @@ class AgentTurnPhase(BasePhase):
         self._llm_provider = llm_provider
         self._village_root: Path | None = None
         self._event_store: EventStore | None = None
+        self._compaction_service: CompactionService | None = None
 
     def set_village_root(self, village_root: Path | str | None) -> None:
         """Configure the village root for shared file syncing."""
@@ -442,6 +523,10 @@ class AgentTurnPhase(BasePhase):
     def set_event_store(self, event_store: "EventStore" | None) -> None:
         """Configure the event store for recent event context."""
         self._event_store = event_store
+
+    def set_compaction_service(self, service: "CompactionService | None") -> None:
+        """Configure the compaction service for token tracking."""
+        self._compaction_service = service
 
     async def _execute(self, ctx: TickContext) -> TickContext:
         """Execute turns for all scheduled agents."""
@@ -478,10 +563,41 @@ class AgentTurnPhase(BasePhase):
             # Create interpreter-ready result (just narrative for now)
             agent_turn_result = AgentTurnResult(narrative=turn_result.narrative)
 
+            # Get agent's location (from original ctx, before any moves this tick)
+            agent = ctx.agents.get(agent_name)
+            agent_location = agent.location if agent else None
+
             new_ctx = new_ctx.with_turn_result(agent_name, agent_turn_result)
             new_ctx = new_ctx.with_effects(turn_result.effects)
-            new_ctx = new_ctx.with_effect(UpdateLastActiveTickEffect(agent=agent_name))
+            if agent_location:
+                new_ctx = new_ctx.with_effect(UpdateLastActiveTickEffect(agent=agent_name, location=agent_location))
             new_ctx = new_ctx.with_agent_acted(agent_name)
+
+            # Mark unseen conversation endings as seen
+            unseen_endings = ctx.unseen_endings.get(agent_name, [])
+            for ending in unseen_endings:
+                new_ctx = new_ctx.with_effect(ConversationEndingSeenEffect(
+                    agent=agent_name,
+                    conversation_id=ending.conversation_id,
+                ))
+
+            # Check if compaction is needed based on token count
+            if self._compaction_service:
+                from engine.services import PRE_SLEEP_THRESHOLD, CRITICAL_THRESHOLD
+
+                tokens = self._compaction_service.get_token_count(agent_name)
+                if tokens >= PRE_SLEEP_THRESHOLD:  # 100K - lower threshold
+                    # Emit ShouldCompactEffect for ApplyEffectsPhase to handle
+                    # critical=True if >= 150K (must compact), False if 100K-150K (pre-sleep)
+                    new_ctx = new_ctx.with_effect(ShouldCompactEffect(
+                        agent=agent_name,
+                        pre_tokens=tokens,
+                        critical=tokens >= CRITICAL_THRESHOLD,
+                    ))
+                    logger.debug(
+                        f"[{agent_name}] Emitting ShouldCompactEffect | "
+                        f"tokens={tokens} | critical={tokens >= CRITICAL_THRESHOLD}"
+                    )
 
         logger.info(f"Executed {len(new_ctx.agents_acted)} agent turns")
         return new_ctx
@@ -595,12 +711,12 @@ class AgentTurnPhase(BasePhase):
 
             if agent_last_turn_idx >= 0:
                 unseen_history = [
-                    {"speaker": t.speaker, "narrative": t.narrative}
+                    {"speaker": t.speaker, "narrative": t.narrative, "is_departure": t.is_departure}
                     for t in conversation.history[agent_last_turn_idx + 1:]
                 ]
             else:
                 unseen_history = [
-                    {"speaker": t.speaker, "narrative": t.narrative}
+                    {"speaker": t.speaker, "narrative": t.narrative, "is_departure": t.is_departure}
                     for t in conversation.history
                 ]
 
@@ -624,6 +740,9 @@ class AgentTurnPhase(BasePhase):
             recent_events or [],
         )
 
+        # Get unseen conversation endings
+        unseen_endings = ctx.unseen_endings.get(agent.name)
+
         return AgentContext(
             agent=agent,
             location_description=location_description,
@@ -641,10 +760,15 @@ class AgentTurnPhase(BasePhase):
             shared_files=shared_files if shared_files else None,
             recent_events=recent_event_descriptions if recent_event_descriptions else None,
             unseen_dreams=unseen_dreams if unseen_dreams else None,
+            unseen_endings=unseen_endings if unseen_endings else None,
         )
 
     def _get_recent_events(self) -> list[DomainEvent]:
-        """Fetch recent world-related events for context."""
+        """Fetch recent world-related events for context.
+
+        Fetches up to 20 recent world/weather events. Per-agent filtering
+        based on last_active_tick is done in _filter_recent_event_descriptions.
+        """
         if self._event_store is None:
             return []
         return self._event_store.get_recent_events(
@@ -658,11 +782,24 @@ class AgentTurnPhase(BasePhase):
         ctx: TickContext,
         events: list[DomainEvent],
     ) -> list[str]:
-        """Filter events to those relevant for this agent."""
+        """Filter events to those relevant for this agent.
+
+        Only includes events since the agent's last_active_tick.
+        On first turn (last_active_tick == 0), uses -1 to ensure tick 0 events
+        like the founding event are included.
+        """
         descriptions: list[str] = []
         agent_location = agent.location
 
+        # Filter based on agent's last active tick
+        # On first turn (last_active_tick == 0), use -1 to include tick 0 events
+        since_tick = -1 if agent.last_active_tick == 0 else agent.last_active_tick
+
         for event in events:
+            # Skip events before this agent's last activity
+            if event.tick < since_tick:
+                continue
+
             match event:
                 case WorldEventOccurred():
                     if event.agents_involved == (agent.name,):

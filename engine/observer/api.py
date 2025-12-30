@@ -539,6 +539,82 @@ class ObserverAPI:
         logger.info(f"OBSERVER_CMD | end_conversation | id={conv_id}")
         return self._engine.end_conversation(conv_id, reason="observer_ended")
 
+    # --- Compaction Control ---
+
+    def get_agent_compaction_state(self, agent_name: AgentName) -> dict | None:
+        """
+        Get compaction state for an agent.
+
+        Args:
+            agent_name: Which agent to check
+
+        Returns:
+            Dict with {tokens, threshold, percent, is_compacting}, or None if no service
+        """
+        service = self._engine.compaction_service
+        if not service:
+            return None
+
+        from engine.services import CRITICAL_THRESHOLD
+
+        tokens = service.get_token_count(agent_name)
+        threshold = CRITICAL_THRESHOLD
+        percent = int((tokens / threshold) * 100) if threshold > 0 else 0
+        is_compacting = agent_name in service._compacting
+
+        return {
+            "tokens": tokens,
+            "threshold": threshold,
+            "percent": percent,
+            "is_compacting": is_compacting,
+        }
+
+    def get_all_agents_compaction_state(self) -> dict[str, dict]:
+        """
+        Get compaction state for all agents.
+
+        Returns:
+            Dict mapping agent names to compaction state dicts
+        """
+        result = {}
+        for name in self._engine.agents:
+            state = self.get_agent_compaction_state(name)
+            if state:
+                result[name] = state
+        return result
+
+    async def do_force_compact(self, agent_name: AgentName) -> dict | None:
+        """
+        Force compaction for an agent (manual trigger).
+
+        Args:
+            agent_name: Which agent to compact
+
+        Returns:
+            Dict with {pre_tokens, post_tokens, saved}, or None if no service
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+        """
+        if agent_name not in self._engine.agents:
+            raise AgentNotFoundError(f"Unknown agent: {agent_name}")
+
+        service = self._engine.compaction_service
+        if not service:
+            logger.warning(f"No compaction service available for force_compact")
+            return None
+
+        logger.info(f"OBSERVER_CMD | force_compact | agent={agent_name}")
+
+        pre_tokens = service.get_token_count(agent_name)
+        post_tokens = await service.execute_compact(agent_name, critical=False)
+
+        return {
+            "pre_tokens": pre_tokens,
+            "post_tokens": post_tokens,
+            "saved": pre_tokens - post_tokens,
+        }
+
     # =========================================================================
     # Internal Helpers
     # =========================================================================

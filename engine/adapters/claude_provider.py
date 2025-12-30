@@ -44,6 +44,9 @@ from engine.domain import (
     AgentName,
     Effect,
     UpdateSessionIdEffect,
+    AcceptInviteEffect,
+    JoinConversationEffect,
+    LeaveConversationEffect,
 )
 from engine.runtime.phases.agent_turn import (
     AgentContext,
@@ -71,10 +74,22 @@ class AgentToolState:
     Each agent gets their own instance, which is captured by closures
     in their MCP tool handlers. The state is updated each turn before
     the LLM call, so tools see the current context.
+
+    Uses asyncio.Lock for thread safety since MCP tool handlers run in
+    background async contexts that could interleave with the message loop.
     """
     tool_context: ToolContext | None = None
     effects: list[Effect] = field(default_factory=list)
     tools: dict[str, ConversationTool] = field(default_factory=dict)
+
+    # Track conversation entry/exit messages
+    narrative_parts: list[str] = field(default_factory=list)
+    capturing_first_message: bool = False
+    first_message_parts: list[str] = field(default_factory=list)
+    pre_leave_narrative: str | None = None
+
+    # Lock for async thread safety
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def update_for_turn(
         self,
@@ -86,6 +101,11 @@ class AgentToolState:
         self.tool_context = tool_context
         self.effects = effects
         self.tools = tools
+        # Reset message capture state
+        self.narrative_parts = []
+        self.capturing_first_message = False
+        self.first_message_parts = []
+        self.pre_leave_narrative = None
 
 
 class PersistentInputStream:
@@ -165,38 +185,55 @@ def _create_mcp_tool_handler(
             return {"content": [{"type": "text", "text": "Tool called outside of turn context."}]}
 
         processor = state.tools.get(tool_name)
-        if processor:
+        if not processor:
+            return {"content": [{"type": "text", "text": "Tool not configured."}]}
+
+        # Process tool under lock for thread safety
+        async with state._lock:
+            # For leave_conversation: capture narrative BEFORE processing
+            if tool_name == "leave_conversation":
+                state.pre_leave_narrative = "\n".join(state.narrative_parts).strip() or None
+
             new_effects = processor.processor(args, state.tool_context)
             state.effects.extend(new_effects)
 
-            if new_effects:
-                # Success messages vary by tool
-                if tool_name == "invite_to_conversation":
-                    return {"content": [{"type": "text", "text": f"Invitation sent to {args.get('invitee')}."}]}
-                elif tool_name == "accept_invite":
-                    return {"content": [{"type": "text", "text": "You accepted the invitation."}]}
-                elif tool_name == "decline_invite":
-                    return {"content": [{"type": "text", "text": "You declined the invitation."}]}
-                elif tool_name == "join_conversation":
-                    return {"content": [{"type": "text", "text": "You joined the conversation."}]}
-                elif tool_name == "leave_conversation":
-                    return {"content": [{"type": "text", "text": "You left the conversation."}]}
-                else:
-                    return {"content": [{"type": "text", "text": "Action completed."}]}
-            else:
-                # Failure messages vary by tool
-                if tool_name == "invite_to_conversation":
-                    return {"content": [{"type": "text", "text": f"Could not invite {args.get('invitee')} - they may not be at your location."}]}
-                elif tool_name in ("accept_invite", "decline_invite"):
-                    return {"content": [{"type": "text", "text": "No matching invitation found."}]}
-                elif tool_name == "join_conversation":
-                    return {"content": [{"type": "text", "text": "Could not join - conversation may not be public or not at your location."}]}
-                elif tool_name == "leave_conversation":
-                    return {"content": [{"type": "text", "text": "You're not in that conversation."}]}
-                else:
-                    return {"content": [{"type": "text", "text": "Action failed."}]}
+            # For accept/join: start capturing text AFTER the tool call
+            if tool_name in ("accept_invite", "join_conversation") and new_effects:
+                state.capturing_first_message = True
 
-        return {"content": [{"type": "text", "text": "Tool not configured."}]}
+            had_effects = bool(new_effects)
+
+        # Return response message based on whether effects were produced
+        if had_effects:
+            # Success messages vary by tool
+            if tool_name == "invite_to_conversation":
+                return {"content": [{"type": "text", "text": f"Invitation sent to {args.get('invitee')}."}]}
+            elif tool_name == "accept_invite":
+                return {"content": [{"type": "text", "text": "You accepted the invitation."}]}
+            elif tool_name == "decline_invite":
+                return {"content": [{"type": "text", "text": "You declined the invitation."}]}
+            elif tool_name == "join_conversation":
+                return {"content": [{"type": "text", "text": "You joined the conversation."}]}
+            elif tool_name == "leave_conversation":
+                return {"content": [{"type": "text", "text": "You left the conversation."}]}
+            elif tool_name == "move_conversation":
+                return {"content": [{"type": "text", "text": f"Everyone will move to {args.get('destination')} once you finish speaking."}]}
+            else:
+                return {"content": [{"type": "text", "text": "Action completed."}]}
+        else:
+            # Failure messages vary by tool
+            if tool_name == "invite_to_conversation":
+                return {"content": [{"type": "text", "text": f"Could not invite {args.get('invitee')} - they may not be at your location."}]}
+            elif tool_name in ("accept_invite", "decline_invite"):
+                return {"content": [{"type": "text", "text": "No matching invitation found."}]}
+            elif tool_name == "join_conversation":
+                return {"content": [{"type": "text", "text": "Could not join - conversation may not be public or not at your location."}]}
+            elif tool_name == "leave_conversation":
+                return {"content": [{"type": "text", "text": "You're not in that conversation."}]}
+            elif tool_name == "move_conversation":
+                return {"content": [{"type": "text", "text": f"Cannot move to {args.get('destination')} - it may not be connected to your current location, or you may not be in a conversation."}]}
+            else:
+                return {"content": [{"type": "text", "text": "Action failed."}]}
 
     return handler
 
@@ -264,6 +301,7 @@ class ClaudeProvider:
         self._agent_states: dict[AgentName, AgentToolState] = {}
         self._prompt_builder = PromptBuilder()
         self._tracer = tracer
+        self._token_counts: dict[AgentName, int] = {}  # Cumulative tokens per agent
 
     async def execute_turn(
         self,
@@ -435,6 +473,13 @@ class ClaudeProvider:
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         narrative_parts.append(block.text)
+                        # Track on state for MCP tool handlers (under lock for thread safety)
+                        state = self._agent_states[agent_name]
+                        async with state._lock:
+                            state.narrative_parts.append(block.text)
+                            # Capture first message parts if we're after accept/join
+                            if state.capturing_first_message:
+                                state.first_message_parts.append(block.text)
                         if self._tracer:
                             self._tracer.log_text(str(agent_name), block.text)
                         # Add LangSmith event for text streaming
@@ -508,6 +553,22 @@ class ClaudeProvider:
                 cost_usd = getattr(message, 'total_cost_usd', None)
                 num_turns = getattr(message, 'num_turns', 0)
 
+                # Extract cumulative token usage for compaction tracking
+                usage = getattr(message, 'usage', None)
+                if usage:
+                    input_tokens = usage.get('input_tokens', 0)
+                    output_tokens = usage.get('output_tokens', 0)
+                    total_tokens = input_tokens + output_tokens
+                    self._token_counts[agent_name] = total_tokens
+                    logger.debug(f"[{agent_name}] Cumulative tokens: {total_tokens}")
+
+                    # Emit token update event for TUI display
+                    if self._tracer:
+                        from engine.services import CRITICAL_THRESHOLD
+                        self._tracer.log_token_update(
+                            str(agent_name), total_tokens, CRITICAL_THRESHOLD
+                        )
+
                 # Update LangSmith metadata with SDK metrics
                 if langsmith_run:
                     langsmith_run.metadata["session_id"] = session_id
@@ -532,6 +593,28 @@ class ClaudeProvider:
                 agent=agent_name,
                 session_id=session_id,
             ))
+
+        # Attach captured messages to conversation effects
+        state = self._agent_states[agent_name]
+
+        # Attach first_message to accept/join effects
+        if state.first_message_parts:
+            first_message = "\n".join(state.first_message_parts).strip()
+            if first_message:
+                for i, effect in enumerate(effects):
+                    if isinstance(effect, AcceptInviteEffect):
+                        effects[i] = effect.model_copy(update={"first_message": first_message})
+                        break
+                    elif isinstance(effect, JoinConversationEffect):
+                        effects[i] = effect.model_copy(update={"first_message": first_message})
+                        break
+
+        # Attach last_message to leave effect
+        if state.pre_leave_narrative:
+            for i, effect in enumerate(effects):
+                if isinstance(effect, LeaveConversationEffect):
+                    effects[i] = effect.model_copy(update={"last_message": state.pre_leave_narrative})
+                    break
 
         logger.debug(
             f"Turn complete for {agent_name} | "
@@ -615,3 +698,11 @@ class ClaudeProvider:
     def get_connected_agents(self) -> list[AgentName]:
         """Get list of agents with active clients."""
         return list(self._clients.keys())
+
+    def get_token_count(self, agent_name: AgentName) -> int:
+        """Get cumulative token count for an agent.
+
+        Returns the total input + output tokens from the most recent turn.
+        This is the SDK's cumulative usage tracking.
+        """
+        return self._token_counts.get(agent_name, 0)

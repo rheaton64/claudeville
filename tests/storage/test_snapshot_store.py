@@ -64,6 +64,7 @@ class TestVillageSnapshot:
             forced_next=AgentName("Ember"),
             skip_counts={},
             turn_counts={},
+            last_location_speaker={},
         )
         snapshot = VillageSnapshot(
             world=world_snapshot,
@@ -157,6 +158,7 @@ class TestVillageSnapshotSerialization:
             forced_next=AgentName("Ember"),
             skip_counts={AgentName("Sage"): 2},
             turn_counts={AgentName("Ember"): 10},
+            last_location_speaker={},
         )
         snapshot = VillageSnapshot(
             world=world_snapshot,

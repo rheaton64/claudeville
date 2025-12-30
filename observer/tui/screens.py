@@ -455,3 +455,68 @@ class ManualObservationDialog(ModalScreen[tuple[str, str, dict] | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+# === Compaction Dialog ===
+
+
+class CompactDialog(ModalScreen[str | None]):
+    """Modal dialog for manually triggering context compaction for an agent."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(
+        self,
+        agent_names: list[str],
+        compaction_states: dict[str, dict] | None = None,
+    ):
+        """
+        Args:
+            agent_names: List of agent names
+            compaction_states: Dict of agent_name -> {tokens, threshold, percent, is_compacting}
+        """
+        super().__init__()
+        self.agent_names = agent_names
+        self.compaction_states = compaction_states or {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog", id="compact-dialog"):
+            yield Static("Force Compaction", classes="dialog-title")
+            yield Static(
+                "Manually trigger context compaction to reduce an agent's token usage.",
+                classes="dialog-help"
+            )
+            # Build options with current token counts
+            options = []
+            for name in self.agent_names:
+                state = self.compaction_states.get(name, {})
+                tokens = state.get("tokens", 0)
+                percent = state.get("percent", 0)
+                if tokens > 0:
+                    label = f"{name} ({tokens/1000:.0f}K tokens, {percent}%)"
+                else:
+                    label = f"{name} (no token data)"
+                options.append((label, name))
+
+            yield Select(
+                options,
+                prompt="Select agent to compact",
+                id="agent-select",
+            )
+            with Horizontal(classes="dialog-buttons"):
+                yield Button("Compact", variant="primary", id="compact-btn")
+                yield Button("Cancel", variant="default", id="cancel-btn")
+
+    def on_mount(self) -> None:
+        self.query_one("#agent-select", Select).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "compact-btn":
+            select = self.query_one("#agent-select", Select)
+            if select.value:
+                self.dismiss(str(select.value))
+            return
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)

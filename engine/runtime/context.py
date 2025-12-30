@@ -23,6 +23,7 @@ from engine.domain import (
     ConversationId,
     Conversation,
     Invitation,
+    UnseenConversationEnding,
     TimeSnapshot,
     WorldSnapshot,
     Effect,
@@ -52,6 +53,7 @@ class TickContext(BaseModel):
     agents: dict[AgentName, AgentSnapshot]
     conversations: dict[ConversationId, Conversation]
     pending_invites: dict[AgentName, Invitation]
+    unseen_endings: dict[AgentName, list[UnseenConversationEnding]] = Field(default_factory=dict)
 
     # --- Scheduled events that triggered this tick ---
     scheduled_events: list[ScheduledEvent] = Field(default_factory=list)

@@ -33,12 +33,14 @@ from engine.domain import (
     WorldSnapshot,
     ConversationEndedEvent,
     WorldEventOccurred,
+    UnseenConversationEnding,
 )
 from engine.storage import EventStore, VillageSnapshot
 from engine.services import (
     Scheduler,
     ConversationService,
     AgentRegistry,
+    CompactionService,
     ScheduledEvent,
     build_initial_snapshot,
     ensure_village_structure,
@@ -110,6 +112,11 @@ class VillageEngine:
         if hasattr(llm_provider, "_tracer"):
             llm_provider._tracer = self._tracer
 
+        # Create compaction service if we have an LLM provider
+        self._compaction_service: CompactionService | None = None
+        if llm_provider is not None:
+            self._compaction_service = CompactionService(llm_provider, self._tracer)
+
         # Build pipeline (phases that don't need LLM can still run)
         self._pipeline = self._build_pipeline()
 
@@ -132,6 +139,7 @@ class VillageEngine:
         self._agents: dict[AgentName, AgentSnapshot] = {}
         self._conversations: dict[ConversationId, Conversation] = {}
         self._pending_invites: dict[AgentName, Invitation] = {}
+        self._unseen_endings: dict[AgentName, list[UnseenConversationEnding]] = {}
         self._recent_arrivals: set[AgentName] = set()
 
     def _build_pipeline(self) -> TickPipeline:
@@ -139,17 +147,22 @@ class VillageEngine:
         agent_turn_phase = AgentTurnPhase(self._llm_provider)
         agent_turn_phase.set_village_root(self.village_root)
         agent_turn_phase.set_event_store(self.event_store)
+        agent_turn_phase.set_compaction_service(self._compaction_service)
 
         # Create interpret phase with tracer for interpret_complete events
         interpret_phase = InterpretPhase()
         interpret_phase.set_tracer(self._tracer)
+
+        # Create apply effects phase with compaction service
+        apply_effects_phase = ApplyEffectsPhase()
+        apply_effects_phase.set_compaction_service(self._compaction_service)
 
         phases = [
             self.wake_phase,
             SchedulePhase(self.scheduler),
             agent_turn_phase,
             interpret_phase,
-            ApplyEffectsPhase(),
+            apply_effects_phase,
         ]
         return TickPipeline(phases)
 
@@ -213,6 +226,11 @@ class VillageEngine:
             self._observer = ObserverAPI(self)
         return self._observer
 
+    @property
+    def compaction_service(self) -> CompactionService | None:
+        """Get the compaction service for manual compaction triggers."""
+        return self._compaction_service
+
     # =========================================================================
     # Initialization and Recovery
     # =========================================================================
@@ -228,10 +246,10 @@ class VillageEngine:
         self.event_store.initialize(initial_snapshot)
         self._hydrate_from_snapshot(initial_snapshot)
 
-        # Emit the founding event
+        # Emit the founding event at tick 0 (before simulation starts)
         agent_names = tuple(self._agents.keys())
         founding_event = WorldEventOccurred(
-            tick=1,
+            tick=0,
             timestamp=self._time_snapshot.timestamp,
             description="ClaudeVille has been founded! Three residents begin their new lives.",
             agents_involved=agent_names,
@@ -263,8 +281,19 @@ class VillageEngine:
         logger.info(f"Recovered at tick {self._tick}")
         return True
 
-    def _hydrate_from_snapshot(self, snapshot: VillageSnapshot) -> None:
-        """Hydrate in-memory state from a snapshot."""
+    def _hydrate_from_snapshot(
+        self,
+        snapshot: VillageSnapshot,
+        *,
+        include_scheduler: bool = True,
+    ) -> None:
+        """
+        Hydrate in-memory state from a snapshot.
+
+        Args:
+            snapshot: The snapshot to hydrate from
+            include_scheduler: Whether to load scheduler state (only True during recovery)
+        """
         self._world = snapshot.world
         self._tick = snapshot.world.tick
         self._time_snapshot = TimeSnapshot(
@@ -275,6 +304,7 @@ class VillageEngine:
         self._agents = dict(snapshot.agents)
         self._conversations = dict(snapshot.conversations)
         self._pending_invites = dict(snapshot.pending_invites)
+        self._unseen_endings = dict(snapshot.unseen_endings) if snapshot.unseen_endings else {}
 
         # Hydrate services
         self.agent_registry.load_state(self._agents)
@@ -283,8 +313,9 @@ class VillageEngine:
             self._pending_invites,
         )
 
-        # Hydrate scheduler if state exists in snapshot
-        if snapshot.scheduler_state is not None:
+        # Hydrate scheduler only during recovery, not after every tick
+        # (to preserve force/skip modifiers set by observer between snapshots)
+        if include_scheduler and snapshot.scheduler_state is not None:
             self.scheduler.load_state(snapshot.scheduler_state)
 
         logger.debug(
@@ -339,6 +370,7 @@ class VillageEngine:
             agents=dict(self._agents),
             conversations=dict(self._conversations),
             pending_invites=dict(self._pending_invites),
+            unseen_endings=dict(self._unseen_endings),
             scheduled_events=scheduled_events,
         )
 
@@ -378,16 +410,18 @@ class VillageEngine:
             result = await self._pipeline.execute(ctx)
 
         # Commit events to storage
+        # Note: last_location_speaker is updated via AgentLastActiveTickUpdatedEvent
         if result.events:
             self.event_store.append_all(result.events)
 
         # Update in-memory state from event store
+        # Note: Don't reload scheduler state - preserve force/skip modifiers
         current_snapshot = self.event_store.get_current_snapshot()
-        self._hydrate_from_snapshot(current_snapshot)
+        self._hydrate_from_snapshot(current_snapshot, include_scheduler=False)
 
         # Create snapshot and archive old events periodically
         # This happens AFTER events are committed, so snapshot captures current tick's state
-        if self._tick > 0 and self._tick % 100 == 0:
+        if self._tick > 0 and self._tick % self.event_store.SNAPSHOT_INTERVAL == 0:
             try:
                 # Save scheduler state to snapshot before persisting
                 self.event_store.set_scheduler_state(self.scheduler.to_state())
@@ -615,6 +649,7 @@ class VillageEngine:
             agents=dict(self._agents),
             conversations=dict(self._conversations),
             pending_invites=dict(self._pending_invites),
+            unseen_endings=dict(self._unseen_endings),
         )
 
         # Use apply effects phase to convert effect to events (sync - no event loop needed)

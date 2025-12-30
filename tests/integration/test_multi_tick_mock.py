@@ -198,7 +198,8 @@ class TestConversationLifecycle:
             AgentName("Bob")
         ].model_copy(update={"location": LocationId("workshop")})
 
-        # Tick 1: Alice invites Bob
+        # Tick 1: Alice invites Bob (force Alice since Bob is also at workshop)
+        test_engine.scheduler.force_next_turn(AgentName("Alice"))
         mock_provider.set_tool_call(
             "Alice",
             "invite_to_conversation",
@@ -210,7 +211,7 @@ class TestConversationLifecycle:
         invite = test_engine.pending_invites[AgentName("Bob")]
         conv_id = invite.conversation_id
 
-        # Tick 2: Bob accepts
+        # Tick 2: Bob accepts (Bob has pending invite so gets scheduled)
         mock_provider.clear_tool_call("Alice")
         mock_provider.set_tool_call(
             "Bob",
@@ -221,7 +222,7 @@ class TestConversationLifecycle:
 
         assert conv_id in test_engine.conversations
 
-        # Ticks 3-5: Chat
+        # Ticks 3-5: Chat (one speaker per tick in conversation)
         mock_provider.clear_tool_call("Bob")
         mock_provider.set_narrative("Alice", "So, what do you think?")
         mock_provider.set_narrative("Bob", "I think it's interesting!")

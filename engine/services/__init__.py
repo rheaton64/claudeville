@@ -1,6 +1,7 @@
 from .scheduler import Scheduler, ScheduledEvent, SchedulerState
 from .conversation_service import ConversationService
 from .agent_registry import AgentRegistry
+from .compaction import CompactionService, CRITICAL_THRESHOLD, PRE_SLEEP_THRESHOLD
 from .bootstrap import (
     AgentSeed,
     DEFAULT_AGENTS,
@@ -26,6 +27,9 @@ __all__ = [
     "SchedulerState",
     "ConversationService",
     "AgentRegistry",
+    "CompactionService",
+    "CRITICAL_THRESHOLD",
+    "PRE_SLEEP_THRESHOLD",
     "AgentSeed",
     "DEFAULT_AGENTS",
     "DEFAULT_LOCATIONS",

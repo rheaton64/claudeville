@@ -22,7 +22,10 @@ from engine.domain import (
     ConversationLeftEvent,
     ConversationTurnEvent,
     ConversationEndedEvent,
+    ConversationEndingUnseenEvent,
+    ConversationEndingSeenEvent,
     WeatherChangedEvent,
+    UnseenConversationEnding,
 )
 from engine.storage import EventStore, VillageSnapshot
 
@@ -429,7 +432,7 @@ class TestEventStoreQueries:
             store.append(event)
 
         events = store.get_events_since(2)
-        assert len(events) == 2  # tick 3 and 4
+        assert len(events) == 3  # tick 2, 3, and 4 (>= tick)
 
     def test_get_recent_events_limit(self, temp_village_dir: Path, world_snapshot: WorldSnapshot, sample_agent: AgentSnapshot):
         """Test get_recent_events respects limit."""
@@ -487,6 +490,46 @@ class TestEventStoreQueries:
         assert len(events) == 1
         assert events[0].type == "agent_moved"
 
+    def test_get_recent_events_since_tick(self, temp_village_dir: Path, world_snapshot: WorldSnapshot, sample_agent: AgentSnapshot):
+        """Test get_recent_events filters by since_tick (>= since_tick)."""
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={},
+            pending_invites={},
+        )
+        store.initialize(snapshot)
+
+        # Add events at ticks 1, 2, 3, 4, 5
+        for tick in [1, 2, 3, 4, 5]:
+            event = AgentMoodChangedEvent(
+                tick=tick,
+                timestamp=datetime.now(),
+                agent=sample_agent.name,
+                old_mood="curious",
+                new_mood=f"mood_{tick}",
+            )
+            store.append(event)
+
+        # since_tick=3 should return events at ticks 3, 4, 5 (>= 3)
+        events = store.get_recent_events(since_tick=3)
+        assert len(events) == 3
+        assert [e.tick for e in events] == [3, 4, 5]
+
+        # since_tick=0 should return all events (>= 0)
+        events = store.get_recent_events(since_tick=0)
+        assert len(events) == 5
+
+        # since_tick=5 should return just tick 5
+        events = store.get_recent_events(since_tick=5)
+        assert len(events) == 1
+        assert events[0].tick == 5
+
+        # since_tick=6 should return nothing
+        events = store.get_recent_events(since_tick=6)
+        assert len(events) == 0
+
 
 class TestEventStoreSnapshotAndArchive:
     """Tests for snapshot creation and archiving."""
@@ -535,6 +578,7 @@ class TestEventStoreSnapshotAndArchive:
             forced_next=AgentName("Ember"),
             skip_counts={},
             turn_counts={AgentName("Ember"): 5},
+            last_location_speaker={},
         )
         store.set_scheduler_state(scheduler_state)
 
@@ -542,3 +586,197 @@ class TestEventStoreSnapshotAndArchive:
         assert current.scheduler_state is not None
         assert current.scheduler_state.forced_next == AgentName("Ember")
         assert current.scheduler_state.turn_counts[AgentName("Ember")] == 5
+
+
+class TestConversationTurnIsDeparture:
+    """Tests for ConversationTurnEvent.is_departure handling."""
+
+    def test_apply_turn_with_is_departure(
+        self,
+        temp_village_dir: Path,
+        world_snapshot: WorldSnapshot,
+        sample_agent: AgentSnapshot,
+        sample_conversation,
+    ):
+        """Test ConversationTurnEvent with is_departure=True creates turn with flag."""
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={sample_conversation.id: sample_conversation},
+            pending_invites={},
+        )
+        store.initialize(snapshot)
+
+        event = ConversationTurnEvent(
+            tick=2,
+            timestamp=datetime.now(),
+            conversation_id=sample_conversation.id,
+            speaker=AgentName("Ember"),
+            narrative="Goodbye everyone!",
+            is_departure=True,
+        )
+        store.append(event)
+
+        current = store.get_current_snapshot()
+        conv = current.conversations[sample_conversation.id]
+        # Find the new turn (last one)
+        last_turn = conv.history[-1]
+        assert last_turn.speaker == AgentName("Ember")
+        assert last_turn.narrative == "Goodbye everyone!"
+        assert last_turn.is_departure is True
+
+    def test_apply_turn_without_is_departure_defaults_false(
+        self,
+        temp_village_dir: Path,
+        world_snapshot: WorldSnapshot,
+        sample_agent: AgentSnapshot,
+        sample_conversation,
+    ):
+        """Test ConversationTurnEvent without is_departure defaults to False."""
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={sample_conversation.id: sample_conversation},
+            pending_invites={},
+        )
+        store.initialize(snapshot)
+
+        event = ConversationTurnEvent(
+            tick=2,
+            timestamp=datetime.now(),
+            conversation_id=sample_conversation.id,
+            speaker=AgentName("Ember"),
+            narrative="Hello!",
+        )
+        store.append(event)
+
+        current = store.get_current_snapshot()
+        conv = current.conversations[sample_conversation.id]
+        last_turn = conv.history[-1]
+        assert last_turn.is_departure is False
+
+
+class TestConversationEndingUnseenEvents:
+    """Tests for ConversationEndingUnseen/Seen event handling."""
+
+    def test_apply_unseen_event_adds_to_unseen_endings(
+        self,
+        temp_village_dir: Path,
+        world_snapshot: WorldSnapshot,
+        sample_agent: AgentSnapshot,
+    ):
+        """Test ConversationEndingUnseenEvent adds to unseen_endings."""
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={},
+            pending_invites={},
+        )
+        store.initialize(snapshot)
+
+        event = ConversationEndingUnseenEvent(
+            tick=2,
+            timestamp=datetime.now(),
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-ended"),
+            other_participant=AgentName("Sage"),
+            final_message="Goodbye!",
+        )
+        store.append(event)
+
+        current = store.get_current_snapshot()
+        assert current.unseen_endings is not None
+        assert AgentName("Ember") in current.unseen_endings
+        endings = current.unseen_endings[AgentName("Ember")]
+        assert len(endings) == 1
+        assert endings[0].conversation_id == ConversationId("conv-ended")
+        assert endings[0].other_participant == AgentName("Sage")
+        assert endings[0].final_message == "Goodbye!"
+
+    def test_apply_seen_event_removes_from_unseen_endings(
+        self,
+        temp_village_dir: Path,
+        world_snapshot: WorldSnapshot,
+        sample_agent: AgentSnapshot,
+    ):
+        """Test ConversationEndingSeenEvent removes from unseen_endings."""
+        # Create snapshot with existing unseen ending
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv-ended"),
+            other_participant=AgentName("Sage"),
+            final_message="Goodbye!",
+            ended_at_tick=1,
+        )
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={},
+            pending_invites={},
+            unseen_endings={AgentName("Ember"): [ending]},
+        )
+        store.initialize(snapshot)
+
+        # Verify it exists
+        current = store.get_current_snapshot()
+        assert len(current.unseen_endings[AgentName("Ember")]) == 1
+
+        # Apply seen event
+        event = ConversationEndingSeenEvent(
+            tick=2,
+            timestamp=datetime.now(),
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-ended"),
+        )
+        store.append(event)
+
+        current = store.get_current_snapshot()
+        # Should be removed - unseen_endings may be None when empty
+        ember_endings = (current.unseen_endings or {}).get(AgentName("Ember"), [])
+        assert len(ember_endings) == 0
+
+    def test_apply_multiple_unseen_events_for_same_agent(
+        self,
+        temp_village_dir: Path,
+        world_snapshot: WorldSnapshot,
+        sample_agent: AgentSnapshot,
+    ):
+        """Test multiple ConversationEndingUnseenEvent for same agent accumulate."""
+        store = EventStore(temp_village_dir)
+        snapshot = VillageSnapshot(
+            world=world_snapshot,
+            agents={sample_agent.name: sample_agent},
+            conversations={},
+            pending_invites={},
+        )
+        store.initialize(snapshot)
+
+        # Add two unseen events
+        event1 = ConversationEndingUnseenEvent(
+            tick=2,
+            timestamp=datetime.now(),
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-1"),
+            other_participant=AgentName("Sage"),
+            final_message="Bye from Sage!",
+        )
+        event2 = ConversationEndingUnseenEvent(
+            tick=3,
+            timestamp=datetime.now(),
+            agent=AgentName("Ember"),
+            conversation_id=ConversationId("conv-2"),
+            other_participant=AgentName("River"),
+            final_message="Bye from River!",
+        )
+        store.append(event1)
+        store.append(event2)
+
+        current = store.get_current_snapshot()
+        endings = current.unseen_endings[AgentName("Ember")]
+        assert len(endings) == 2
+        conv_ids = {e.conversation_id for e in endings}
+        assert ConversationId("conv-1") in conv_ids
+        assert ConversationId("conv-2") in conv_ids

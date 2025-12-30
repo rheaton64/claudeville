@@ -284,7 +284,8 @@ class ScheduleStatusPanel(Vertical):
             status_widget.update(Text("None", style="dim"))
         else:
             # Remove trailing newline while preserving styles
-            status_widget.update(text.rstrip())
+            text.rstrip()
+            status_widget.update(text)
 
     def _get_agent_color(self, name: str) -> str:
         """Get the color for an agent name."""

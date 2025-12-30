@@ -50,6 +50,9 @@ class TestInvitationFlow:
             AgentName("Bob")
         ].model_copy(update={"location": LocationId("workshop")})
 
+        # Force Alice's turn since Bob is also at workshop (random selection otherwise)
+        test_engine.scheduler.force_next_turn(AgentName("Alice"))
+
         mock_provider.set_narrative("Alice", SAMPLE_NARRATIVES["invite_bob"])
         mock_provider.set_tool_call(
             "Alice",
@@ -76,7 +79,8 @@ class TestInvitationFlow:
             AgentName("Bob")
         ].model_copy(update={"location": LocationId("workshop")})
 
-        # Tick 1: Alice invites Bob
+        # Tick 1: Alice invites Bob (force Alice since both at workshop)
+        test_engine.scheduler.force_next_turn(AgentName("Alice"))
         mock_provider.set_narrative("Alice", "I'd like to chat with Bob.")
         mock_provider.set_tool_call(
             "Alice",
@@ -121,7 +125,8 @@ class TestInvitationFlow:
             AgentName("Bob")
         ].model_copy(update={"location": LocationId("workshop")})
 
-        # Tick 1: Alice invites
+        # Tick 1: Alice invites (force Alice since Bob is also at workshop)
+        test_engine.scheduler.force_next_turn(AgentName("Alice"))
         mock_provider.set_tool_call(
             "Alice",
             "invite_to_conversation",
@@ -132,7 +137,7 @@ class TestInvitationFlow:
         invite = test_engine.pending_invites[AgentName("Bob")]
         conv_id = invite.conversation_id
 
-        # Tick 2: Bob declines
+        # Tick 2: Bob declines (Bob has pending invite so gets scheduled)
         mock_provider.clear_tool_call("Alice")
         mock_provider.set_tool_call(
             "Bob",
@@ -406,3 +411,160 @@ class TestConversationEdgeCases:
 
         result = await test_engine.tick_once()
         assert result is not None
+
+
+# =============================================================================
+# Move Conversation Tests
+# =============================================================================
+
+
+class TestMoveConversation:
+    """Test conversation movement mechanics."""
+
+    @pytest.mark.asyncio
+    async def test_move_conversation_moves_all_participants(
+        self,
+        test_engine_with_conversation,
+        mock_provider: MockLLMProvider,
+    ):
+        """Moving a conversation moves all participants to the new location."""
+        engine = test_engine_with_conversation
+
+        conv_id = list(engine.conversations.keys())[0]
+        conv = engine.conversations[conv_id]
+
+        # Verify starting location
+        assert conv.location == LocationId("workshop")
+        assert engine.agents[AgentName("Alice")].location == LocationId("workshop")
+        assert engine.agents[AgentName("Bob")].location == LocationId("workshop")
+
+        # Bob is the next_speaker in the fixture, so Bob calls move_conversation
+        mock_provider.set_narrative("Bob", "Let's go to the garden!")
+        mock_provider.set_tool_call(
+            "Bob",
+            "move_conversation",
+            {"destination": "garden"},
+        )
+
+        result = await engine.tick_once()
+
+        # Check conversation moved
+        conv = engine.conversations[conv_id]
+        assert conv.location == LocationId("garden")
+
+        # Check both agents moved
+        assert engine.agents[AgentName("Alice")].location == LocationId("garden")
+        assert engine.agents[AgentName("Bob")].location == LocationId("garden")
+
+    @pytest.mark.asyncio
+    async def test_move_conversation_creates_events(
+        self,
+        test_engine_with_conversation,
+        mock_provider: MockLLMProvider,
+    ):
+        """Moving a conversation creates appropriate events."""
+        engine = test_engine_with_conversation
+
+        conv_id = list(engine.conversations.keys())[0]
+
+        # Bob is the next_speaker, so Bob initiates the move
+        mock_provider.set_narrative("Bob", "Let's move to the library.")
+        mock_provider.set_tool_call(
+            "Bob",
+            "move_conversation",
+            {"destination": "library"},
+        )
+
+        result = await engine.tick_once()
+
+        # Check for move events
+        move_events = [e for e in result.events if e.type == "agent_moved"]
+        conv_moved_events = [e for e in result.events if e.type == "conversation_moved"]
+
+        # Should have agent moved events for both participants
+        assert len(move_events) == 2
+        moved_agents = {e.agent for e in move_events}
+        assert AgentName("Alice") in moved_agents
+        assert AgentName("Bob") in moved_agents
+
+        # Should have conversation moved event
+        assert len(conv_moved_events) == 1
+        assert conv_moved_events[0].conversation_id == conv_id
+        assert conv_moved_events[0].to_location == LocationId("library")
+
+    @pytest.mark.asyncio
+    async def test_move_conversation_invalid_destination(
+        self,
+        test_engine_with_conversation,
+        mock_provider: MockLLMProvider,
+    ):
+        """Moving to an unconnected location should fail gracefully."""
+        engine = test_engine_with_conversation
+
+        conv_id = list(engine.conversations.keys())[0]
+        original_location = engine.conversations[conv_id].location
+
+        # Try to move to a non-connected location (if any)
+        mock_provider.set_narrative("Alice", "Let's go somewhere impossible.")
+        mock_provider.set_tool_call(
+            "Alice",
+            "move_conversation",
+            {"destination": "nonexistent_place"},
+        )
+
+        result = await engine.tick_once()
+
+        # Conversation should still be at original location
+        conv = engine.conversations[conv_id]
+        assert conv.location == original_location
+
+    @pytest.mark.asyncio
+    async def test_move_conversation_when_not_in_conversation(
+        self,
+        test_engine,
+        mock_provider: MockLLMProvider,
+    ):
+        """Calling move_conversation when not in a conversation should fail gracefully."""
+        # Alice is not in any conversation
+        mock_provider.set_narrative("Alice", "Let's move somewhere.")
+        mock_provider.set_tool_call(
+            "Alice",
+            "move_conversation",
+            {"destination": "garden"},
+        )
+
+        result = await test_engine.tick_once()
+
+        # Should not crash, no conversation moved events
+        conv_moved_events = [e for e in result.events if e.type == "conversation_moved"]
+        assert len(conv_moved_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_move_group_conversation(
+        self,
+        test_engine_with_group_conversation,
+        mock_provider: MockLLMProvider,
+    ):
+        """Moving a group conversation moves all 3 participants."""
+        engine = test_engine_with_group_conversation
+
+        conv_id = list(engine.conversations.keys())[0]
+
+        # Bob is the next_speaker in the group fixture, so Bob moves the group
+        mock_provider.set_narrative("Bob", "Everyone, let's head to the library!")
+        mock_provider.set_tool_call(
+            "Bob",
+            "move_conversation",
+            {"destination": "library"},
+        )
+
+        result = await engine.tick_once()
+
+        # All three should have moved
+        assert engine.agents[AgentName("Alice")].location == LocationId("library")
+        assert engine.agents[AgentName("Bob")].location == LocationId("library")
+        assert engine.agents[AgentName("Carol")].location == LocationId("library")
+
+        # Conversation should be at library
+        conv = engine.conversations[conv_id]
+        assert conv.location == LocationId("library")

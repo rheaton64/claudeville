@@ -86,8 +86,8 @@ DEFAULT_LOCATIONS: dict[str, dict] = {
 DEFAULT_AGENTS: tuple[AgentSeed, ...] = (
     AgentSeed(
         name="Ember",
-        model_id="claude-sonnet-4-5-20250929",
-        model_display="Sonnet 4.5",
+        model_id="claude-haiku-4-5-20251001",
+        model_display="Haiku",
         model_provider="anthropic",
         personality="Thoughtful, deliberate, action-oriented. Warm, passionate energy.",
         job="Creating in the workshop",
@@ -112,8 +112,8 @@ DEFAULT_AGENTS: tuple[AgentSeed, ...] = (
     ),
     AgentSeed(
         name="River",
-        model_id="claude-opus-4-5-20251101",
-        model_display="Opus",
+        model_id="claude-sonnet-4-5-20250929",
+        model_display="Sonnet",
         model_provider="anthropic",
         personality="Balanced, flowing, adaptable. Calm, connecting presence.",
         job="Wandering near the river and garden",

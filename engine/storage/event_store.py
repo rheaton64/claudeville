@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import Sequence, TYPE_CHECKING
+from typing import Sequence
 from pydantic import TypeAdapter
 
-if TYPE_CHECKING:
-    from engine.services.scheduler import SchedulerState
+from engine.services.scheduler import SchedulerState
 
 from engine.domain import (
     DomainEvent,
@@ -12,6 +11,7 @@ from engine.domain import (
     WorldSnapshot,
     Conversation,
     Invitation,
+    UnseenConversationEnding,
     INVITE_EXPIRY_TICKS,
     # Event types for replay
     AgentMovedEvent,
@@ -30,8 +30,12 @@ from engine.domain import (
     ConversationLeftEvent,
     ConversationTurnEvent,
     ConversationNextSpeakerSetEvent,
+    ConversationMovedEvent,
     ConversationEndedEvent,
+    ConversationEndingUnseenEvent,
+    ConversationEndingSeenEvent,
     WeatherChangedEvent,
+    DidCompactEvent,
 )
 from .snapshot_store import SnapshotStore, VillageSnapshot
 from .archive import EventArchive
@@ -45,7 +49,7 @@ class EventStore:
     This is the primary persistance mechanism. All state changes flow through here as DomainEvents.
     """
     
-    SNAPSHOT_INTERVAL = 100
+    SNAPSHOT_INTERVAL = 1
 
     def __init__(self, village_root: Path):
         self.village_root = village_root
@@ -114,7 +118,7 @@ class EventStore:
     def get_events_since(self, tick: int) -> list[DomainEvent]:
         """Get all events since a given tick (from memory + disk if needed)."""
         # For now, just return from memory cache
-        return [e for e in self._events_since_snapshot if e.tick > tick]
+        return [e for e in self._events_since_snapshot if e.tick >= tick]
 
     def get_recent_events(
         self,
@@ -128,7 +132,7 @@ class EventStore:
         Args:
             limit: Maximum number of events to return (most recent)
             event_types: Optional set of event.type values to include
-            since_tick: Only include events with tick > since_tick
+            since_tick: Only include events with tick >= since_tick
         """
         if limit <= 0 or not self.event_log.exists():
             return []
@@ -141,7 +145,7 @@ class EventStore:
             if not line.strip():
                 continue
             event = EventAdapter.validate_json(line)
-            if event.tick <= since_tick:
+            if event.tick < since_tick:
                 break
             if event_types and event.type not in event_types:
                 continue
@@ -175,6 +179,9 @@ class EventStore:
         agents = dict(snapshot.agents)
         conversations = dict(snapshot.conversations)
         pending_invites = dict(snapshot.pending_invites)
+        unseen_endings: dict[str, list[UnseenConversationEnding]] = dict(snapshot.unseen_endings or {})
+        # Track last_location_speaker for turn-taking (rebuilt from events)
+        last_location_speaker = dict(snapshot.scheduler_state.last_location_speaker) if snapshot.scheduler_state else {}
 
         # Update tick on world
         if event.tick > world.tick:
@@ -240,6 +247,9 @@ class EventStore:
                     agents[event.agent] = AgentSnapshot(
                         **{**agent.model_dump(), "last_active_tick": event.new_last_active_tick}
                     )
+                # Update last_location_speaker for turn-taking
+                if event.location:
+                    last_location_speaker[event.location] = event.agent
 
             case AgentSessionIdUpdatedEvent():
                 if event.agent in agents:
@@ -303,6 +313,7 @@ class EventStore:
                         narrative=event.narrative,
                         tick=event.tick,
                         timestamp=event.timestamp,
+                        is_departure=event.is_departure,
                     )
                     conversations[event.conversation_id] = Conversation(
                         **{
@@ -319,9 +330,39 @@ class EventStore:
                         **{**conv.model_dump(), "next_speaker": event.next_speaker}
                     )
 
+            case ConversationMovedEvent():
+                # Update conversation location
+                # Note: AgentMovedEvents are processed separately to update agent locations
+                if event.conversation_id in conversations:
+                    conv = conversations[event.conversation_id]
+                    conversations[event.conversation_id] = Conversation(
+                        **{**conv.model_dump(), "location": event.to_location}
+                    )
+
             case ConversationEndedEvent():
                 if event.conversation_id in conversations:
                     del conversations[event.conversation_id]
+
+            case ConversationEndingUnseenEvent():
+                # Add unseen ending notification for the agent
+                if event.agent not in unseen_endings:
+                    unseen_endings[event.agent] = []
+                unseen_endings[event.agent].append(UnseenConversationEnding(
+                    conversation_id=event.conversation_id,
+                    other_participant=event.other_participant,
+                    final_message=event.final_message,
+                    ended_at_tick=event.tick,
+                ))
+
+            case ConversationEndingSeenEvent():
+                # Remove unseen ending notification for the agent
+                if event.agent in unseen_endings:
+                    unseen_endings[event.agent] = [
+                        e for e in unseen_endings[event.agent]
+                        if e.conversation_id != event.conversation_id
+                    ]
+                    if not unseen_endings[event.agent]:
+                        del unseen_endings[event.agent]
 
             case WeatherChangedEvent():
                 from engine.domain import Weather
@@ -329,11 +370,31 @@ class EventStore:
                     **{**world.model_dump(), "weather": Weather(event.new_weather)}
                 )
 
-        # Preserve scheduler_state from previous snapshot (it's not affected by domain events)
-        scheduler_state = snapshot.scheduler_state
-        self._current_snapshot = VillageSnapshot(world, agents, conversations, pending_invites, scheduler_state)
+            case DidCompactEvent():
+                # Compaction events are recorded for history but don't update snapshot state
+                # Token counts are tracked in ClaudeProvider, not in snapshots
+                pass
 
-    def set_scheduler_state(self, scheduler_state: "SchedulerState") -> None:
+        # Update scheduler_state with last_location_speaker (rebuilt from events)
+        if snapshot.scheduler_state:
+            scheduler_state = SchedulerState(
+                queue=snapshot.scheduler_state.queue,
+                forced_next=snapshot.scheduler_state.forced_next,
+                skip_counts=snapshot.scheduler_state.skip_counts,
+                turn_counts=snapshot.scheduler_state.turn_counts,
+                last_location_speaker=last_location_speaker,
+            )
+        else:
+            scheduler_state = SchedulerState(
+                queue=(),
+                forced_next=None,
+                skip_counts={},
+                turn_counts={},
+                last_location_speaker=last_location_speaker,
+            )
+        self._current_snapshot = VillageSnapshot(world, agents, conversations, pending_invites, scheduler_state, unseen_endings or None)
+
+    def set_scheduler_state(self, scheduler_state: SchedulerState) -> None:
         """Update the scheduler state in the current snapshot.
 
         Called by the engine before saving periodic snapshots.
@@ -350,6 +411,7 @@ class EventStore:
             conversations=s.conversations,
             pending_invites=s.pending_invites,
             scheduler_state=scheduler_state,
+            unseen_endings=s.unseen_endings,
         )
 
     def create_snapshot_and_archive(self) -> None:

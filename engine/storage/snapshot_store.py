@@ -10,6 +10,7 @@ from engine.domain import (
     ConversationId,
     Invitation,
     AgentName,
+    UnseenConversationEnding,
 )
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ class VillageSnapshot:
     conversations: dict[ConversationId, Conversation]
     pending_invites: dict[AgentName, Invitation]
     scheduler_state: "SchedulerState | None" = None
+    unseen_endings: dict[AgentName, list[UnseenConversationEnding]] | None = None
 
     @property
     def tick(self) -> int:
@@ -38,6 +40,11 @@ class VillageSnapshot:
         }
         if self.scheduler_state is not None:
             result["scheduler_state"] = self.scheduler_state.to_dict()
+        if self.unseen_endings:
+            result["unseen_endings"] = {
+                name: [ending.model_dump(mode="json") for ending in endings]
+                for name, endings in self.unseen_endings.items()
+            }
         return result
 
     @classmethod
@@ -48,6 +55,13 @@ class VillageSnapshot:
             from engine.services.scheduler import SchedulerState
             scheduler_state = SchedulerState.from_dict(data["scheduler_state"])
 
+        unseen_endings = None
+        if "unseen_endings" in data:
+            unseen_endings = {
+                name: [UnseenConversationEnding.model_validate(ending) for ending in endings]
+                for name, endings in data["unseen_endings"].items()
+            }
+
         return cls(
             world=WorldSnapshot.model_validate(data["world"]),
             agents={name: AgentSnapshot.model_validate(agent) for name, agent in data["agents"].items()},
@@ -57,6 +71,7 @@ class VillageSnapshot:
                 for name, invite in data.get("pending_invites", {}).items()
             },
             scheduler_state=scheduler_state,
+            unseen_endings=unseen_endings,
         )
 
 class SnapshotStore:

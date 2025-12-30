@@ -57,6 +57,7 @@ class UpdateLastActiveTickEffect(BaseModel):
     type: Literal["update_last_active_tick"] = "update_last_active_tick"
 
     agent: AgentName
+    location: LocationId  # Where the agent was when they acted
 
 
 class UpdateSessionIdEffect(BaseModel):
@@ -88,6 +89,7 @@ class AcceptInviteEffect(BaseModel):
 
     agent: AgentName
     conversation_id: ConversationId
+    first_message: str | None = None  # Text after the accept tool call
 
 class DeclineInviteEffect(BaseModel):
     """Agent declines a conversation invitation."""
@@ -112,6 +114,7 @@ class JoinConversationEffect(BaseModel):
 
     agent: AgentName
     conversation_id: ConversationId
+    first_message: str | None = None  # Text after the join tool call
 
 class LeaveConversationEffect(BaseModel):
     """Agent leaves a conversation."""
@@ -120,6 +123,18 @@ class LeaveConversationEffect(BaseModel):
 
     agent: AgentName
     conversation_id: ConversationId
+    last_message: str | None = None  # Text before the leave tool call
+
+
+class MoveConversationEffect(BaseModel):
+    """Move entire conversation to a new location."""
+    model_config = ConfigDict(frozen=True)
+    type: Literal["move_conversation"] = "move_conversation"
+
+    agent: AgentName  # Who initiated the move
+    conversation_id: ConversationId
+    to_location: LocationId
+
 
 class AddConversationTurnEffect(BaseModel):
     """Agent spoke in a conversation."""
@@ -146,6 +161,34 @@ class EndConversationEffect(BaseModel):
     conversation_id: ConversationId
     reason: str
 
+
+class ConversationEndingSeenEffect(BaseModel):
+    """Agent has seen/acknowledged a conversation ending."""
+    model_config = ConfigDict(frozen=True)
+    type: Literal["conversation_ending_seen"] = "conversation_ending_seen"
+
+    agent: AgentName
+    conversation_id: ConversationId
+
+
+# --- Compaction Effects ---
+
+class ShouldCompactEffect(BaseModel):
+    """Request compaction for an agent's context.
+
+    Emitted by AgentTurnPhase when tokens >= 100K (pre-sleep threshold).
+    ApplyEffectsPhase decides whether to actually compact based on:
+    - critical=True (>= 150K): always compact
+    - critical=False (100K-150K): only compact if agent is going to sleep
+    """
+    model_config = ConfigDict(frozen=True)
+    type: Literal["should_compact"] = "should_compact"
+
+    agent: AgentName
+    pre_tokens: int  # Token count before compaction
+    critical: bool  # True = 150K threshold (critical), False = 100K pre-sleep (opportunistic)
+
+
 Effect = Annotated[
     Union[
         MoveAgentEffect,
@@ -162,9 +205,12 @@ Effect = Annotated[
         ExpireInviteEffect,
         JoinConversationEffect,
         LeaveConversationEffect,
+        MoveConversationEffect,
         AddConversationTurnEffect,
         SetNextSpeakerEffect,
         EndConversationEffect,
+        ConversationEndingSeenEffect,
+        ShouldCompactEffect,
     ],
     Discriminator("type"),
 ]

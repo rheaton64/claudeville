@@ -14,6 +14,7 @@ from engine.domain import (
     ConversationTurn,
     Invitation,
     LocationId,
+    UnseenConversationEnding,
 )
 
 
@@ -397,3 +398,428 @@ class TestBuildUserPromptJoinable:
         assert "public conversations" in prompt.lower()
         assert "Sage" in prompt
         assert "join_conversation" in prompt
+
+
+class TestBuildUserPromptNonParticipants:
+    """Tests for non-participants note in conversation section."""
+
+    def test_shows_non_participant_note_single(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that single non-participant at location gets a note."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "others_present": ["Sage", "River"],  # River is not in conversation
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "River can't hear your words" in prompt
+        assert "Invite them to the conversation" in prompt
+
+    def test_shows_non_participant_note_multiple(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that multiple non-participants at location get a note."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "others_present": ["Sage", "River", "Luna"],  # River and Luna not in conversation
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "River and Luna can't hear your words" in prompt
+        assert "Invite them to the conversation" in prompt
+
+    def test_no_note_when_all_present_are_participants(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test no note when everyone present is in the conversation."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "others_present": ["Sage"],  # Sage is in conversation
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "can't hear your words" not in prompt
+
+    def test_no_note_when_alone_at_location(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test no note when alone at location."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "others_present": [],
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "can't hear your words" not in prompt
+
+    def test_shows_note_when_not_in_conversation_single(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test note shown when not in conversation with single other present."""
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": None,
+                "others_present": ["Sage"],
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Sage can't hear your words" in prompt
+        assert "Invite them to the conversation" in prompt
+
+    def test_shows_note_when_not_in_conversation_multiple(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test note shown when not in conversation with multiple others present."""
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": None,
+                "others_present": ["Sage", "River"],
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Sage and River can't hear your words" in prompt
+        assert "Invite them to the conversation" in prompt
+
+    def test_no_note_when_alone_not_in_conversation(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test no note when alone and not in conversation."""
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": None,
+                "others_present": [],
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "can't hear your words" not in prompt
+
+
+class TestBuildUserPromptDeparture:
+    """Tests for departure indicators in conversation section."""
+
+    def test_shows_departure_indicator_after_message(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that departure messages show indicator after the message."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        unseen = [
+            {
+                "speaker": "Sage",
+                "narrative": "Farewell, I must go!",
+                "is_departure": True,
+            },
+        ]
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "unseen_history": unseen,
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Farewell, I must go!" in prompt
+        assert "[Sage then left the conversation]" in prompt
+
+    def test_no_departure_indicator_for_regular_message(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that regular messages don't show departure indicator."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        unseen = [
+            {
+                "speaker": "Sage",
+                "narrative": "Hello there!",
+                "is_departure": False,
+            },
+        ]
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "unseen_history": unseen,
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Hello there!" in prompt
+        assert "then left the conversation" not in prompt
+
+    def test_shows_just_left_in_header(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that conversation header shows who just left."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        unseen = [
+            {
+                "speaker": "River",
+                "narrative": "See you all later!",
+                "is_departure": True,
+            },
+        ]
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "unseen_history": unseen,
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        # Should show River just left in the header
+        assert "River just left" in prompt
+
+    def test_multiple_departures_in_header(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that multiple departures are shown in header."""
+        # Conversation still has one other participant remaining
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Luna")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        unseen = [
+            {
+                "speaker": "Sage",
+                "narrative": "I must go!",
+                "is_departure": True,
+            },
+            {
+                "speaker": "River",
+                "narrative": "Me too!",
+                "is_departure": True,
+            },
+        ]
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "unseen_history": unseen,
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        # Both departures should be mentioned in the header
+        assert "Sage" in prompt
+        assert "River" in prompt
+        assert "just left" in prompt
+
+    def test_mixed_messages_with_departure(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test a mix of regular messages and departures."""
+        conv = Conversation(
+            id=ConversationId("conv1"),
+            location=LocationId("workshop"),
+            participants=frozenset({AgentName("Ember"), AgentName("Sage")}),
+            privacy="public",
+            started_at_tick=1,
+            created_by=AgentName("Ember"),
+            history=(),
+        )
+        unseen = [
+            {
+                "speaker": "River",
+                "narrative": "What a nice day!",
+                "is_departure": False,
+            },
+            {
+                "speaker": "River",
+                "narrative": "Well, I'm off now.",
+                "is_departure": True,
+            },
+        ]
+        ctx = AgentContext(
+            **{
+                **basic_agent_context.__dict__,
+                "conversation": conv,
+                "unseen_history": unseen,
+            }
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "What a nice day!" in prompt
+        assert "Well, I'm off now." in prompt
+        # Only the departure message should have the indicator
+        assert "[River then left the conversation]" in prompt
+
+
+class TestBuildUserPromptUnseenEndings:
+    """Tests for unseen conversation endings section."""
+
+    def test_shows_unseen_ending_with_final_message(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that unseen endings with final message are shown."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv1"),
+            other_participant=AgentName("Sage"),
+            final_message="Goodbye, my friend!",
+            ended_at_tick=5,
+        )
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "unseen_endings": [ending]}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Conversations that ended" in prompt
+        assert "Sage" in prompt
+        assert "Goodbye, my friend!" in prompt
+        assert "parting words" in prompt
+
+    def test_shows_unseen_ending_without_final_message(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that unseen endings without final message are shown."""
+        ending = UnseenConversationEnding(
+            conversation_id=ConversationId("conv1"),
+            other_participant=AgentName("River"),
+            final_message=None,
+            ended_at_tick=3,
+        )
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "unseen_endings": [ending]}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Conversations that ended" in prompt
+        assert "River" in prompt
+        # No parting words since there's no final message
+        assert "parting words" not in prompt
+
+    def test_shows_multiple_unseen_endings(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that multiple unseen endings are shown."""
+        ending1 = UnseenConversationEnding(
+            conversation_id=ConversationId("conv1"),
+            other_participant=AgentName("Sage"),
+            final_message="See you later!",
+            ended_at_tick=5,
+        )
+        ending2 = UnseenConversationEnding(
+            conversation_id=ConversationId("conv2"),
+            other_participant=AgentName("River"),
+            final_message="Take care!",
+            ended_at_tick=6,
+        )
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "unseen_endings": [ending1, ending2]}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Sage" in prompt
+        assert "River" in prompt
+        assert "See you later!" in prompt
+        assert "Take care!" in prompt
+
+    def test_no_unseen_endings_section_when_empty(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that no endings section appears when there are none."""
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "unseen_endings": []}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "Conversations that ended" not in prompt

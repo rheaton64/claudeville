@@ -283,3 +283,69 @@ class VillageTracer:
             "wants_to_sleep": result.wants_to_sleep,
             "suggested_next_speaker": result.suggested_next_speaker,
         })
+
+    # =========================================================================
+    # Compaction Events
+    # =========================================================================
+
+    def log_token_update(
+        self,
+        agent_name: str,
+        token_count: int,
+        threshold: int = 150_000,
+    ) -> None:
+        """
+        Log token count update (for TUI display).
+
+        Called after each turn to update the token display.
+
+        Args:
+            agent_name: Which agent's tokens were updated
+            token_count: Current cumulative token count
+            threshold: Compaction threshold (default 150K)
+        """
+        percent = min(100, int(token_count / threshold * 100))
+        self._write_event(agent_name, "token_update", {
+            "tokens": token_count,
+            "threshold": threshold,
+            "percent": percent,
+        })
+
+    def log_compaction_start(
+        self,
+        agent_name: str,
+        critical: bool,
+        pre_tokens: int,
+    ) -> None:
+        """
+        Log the start of a compaction operation.
+
+        Args:
+            agent_name: Which agent is being compacted
+            critical: True if critical threshold (150K), False if pre-sleep (100K)
+            pre_tokens: Token count before compaction
+        """
+        self._write_event(agent_name, "compaction_start", {
+            "critical": critical,
+            "pre_tokens": pre_tokens,
+        })
+
+    def log_compaction_end(
+        self,
+        agent_name: str,
+        pre_tokens: int,
+        post_tokens: int,
+    ) -> None:
+        """
+        Log completion of compaction.
+
+        Args:
+            agent_name: Which agent was compacted
+            pre_tokens: Token count before compaction
+            post_tokens: Token count after compaction
+        """
+        self._write_event(agent_name, "compaction_end", {
+            "pre_tokens": pre_tokens,
+            "post_tokens": post_tokens,
+            "tokens_saved": pre_tokens - post_tokens,
+        })

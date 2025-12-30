@@ -163,6 +163,8 @@ Agents have explicit conversation tools:
 - `join_conversation(participant)` - Join a public conversation by naming someone in it
 - `leave_conversation()` - Leave current conversation (no args needed)
 
+**Entry/Exit Messages**: Text written after `accept_invite` or `join_conversation` becomes the agent's first message in the conversation. Text written before `leave_conversation` becomes their parting message.
+
 Note: Agents never see conversation IDs - tools use agent names or no input.
 
 ### Per-Agent Models

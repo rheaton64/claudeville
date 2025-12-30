@@ -21,6 +21,7 @@ from engine.domain import (
     RecordActionEffect,
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
+    LeaveConversationEffect,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -185,8 +186,16 @@ class InterpretPhase(BasePhase):
             ))
 
         # If in conversation, add the narrative as a conversation turn
+        # But skip if leaving with a last_message (turn already captured there)
+        has_leave_with_last_message = any(
+            isinstance(e, LeaveConversationEffect)
+            and e.agent == agent_name
+            and e.last_message
+            for e in ctx.effects
+        )
+
         conversations = ctx.get_conversations_for_agent(agent_name)
-        if conversations:
+        if conversations and not has_leave_with_last_message:
             # Use the first conversation (agents typically in one at a time)
             conv = conversations[0]
             effects.append(AddConversationTurnEffect(
