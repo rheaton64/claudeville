@@ -8,5 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
-.env/
+.env
+.claude/
+.pytest_cache/
 village/

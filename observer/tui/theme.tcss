@@ -1,0 +1,260 @@
+/* ClaudeVille Observer TUI - Dark Terminal Theme */
+
+/* === Global === */
+Screen {
+    background: #0d1117;
+}
+
+/* === Header === */
+#village-header {
+    height: 1;
+    width: 100%;
+    background: #161b22;
+}
+
+#title {
+    text-style: bold;
+    color: #58a6ff;
+    width: 12;
+}
+
+#day-display {
+    color: #c9d1d9;
+    width: 8;
+}
+
+#time-display {
+    color: #f0c14b;
+    width: 20;
+}
+
+#weather-display {
+    color: #8b949e;
+    width: 12;
+}
+
+#tick-display {
+    color: #8b949e;
+    width: 10;
+}
+
+#conv-display {
+    color: #a78bfa;
+    width: 20;
+}
+
+#status-display {
+    text-style: bold;
+    width: 1fr;
+    text-align: right;
+}
+
+/* === Main Content Container === */
+#main-content {
+    height: 1fr;
+}
+
+/* === Agent Panels Container === */
+#agent-panels {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+}
+
+/* === Agent Panel Base === */
+.agent-panel {
+    border: round #30363d;
+    margin: 0 1;
+    min-width: 30;
+    width: 1fr;
+}
+
+.agent-panel.focused {
+    width: 2fr;
+}
+
+/* Agent-specific accent colors */
+.agent-panel.ember {
+    border: round #f97316;
+}
+.agent-panel.ember .agent-name {
+    color: #f97316;
+}
+
+.agent-panel.sage {
+    border: round #a78bfa;
+}
+.agent-panel.sage .agent-name {
+    color: #a78bfa;
+}
+
+.agent-panel.river {
+    border: round #38bdf8;
+}
+.agent-panel.river .agent-name {
+    color: #38bdf8;
+}
+
+/* === Agent Panel Header === */
+.agent-header {
+    height: auto;
+    padding: 0 1;
+    background: #161b22;
+}
+
+.agent-header-content {
+    width: 100%;
+    height: auto;
+}
+
+.agent-name {
+    text-style: bold;
+}
+
+.model-badge {
+    color: #8b949e;
+}
+
+.agent-location {
+    color: #8b949e;
+    text-style: italic;
+}
+
+/* === Agent Status Bar === */
+.agent-status {
+    height: auto;
+    max-height: 2;
+    padding: 0 1;
+    background: #161b22;
+    border-bottom: solid #30363d;
+}
+
+.status-content {
+    width: 100%;
+    height: auto;
+}
+
+.mood-display {
+    width: auto;
+}
+
+.energy-display {
+    color: #3fb950;
+    margin-left: 1;
+}
+
+/* === Agent Narrative Log === */
+.agent-narrative {
+    height: 1fr;
+    padding: 1;
+    scrollbar-gutter: stable;
+    background: #0d1117;
+}
+
+/* === Events Feed === */
+#events-feed {
+    height: 6;
+    border-top: solid #30363d;
+    padding: 0 2;
+    background: #161b22;
+}
+
+#events-feed-label {
+    color: #8b949e;
+    text-style: bold;
+    height: 1;
+    padding: 0 1;
+}
+
+#events-log {
+    height: 1fr;
+    padding: 0 1;
+}
+
+/* === Footer === */
+#footer {
+    height: 1;
+    background: #161b22;
+    border-top: solid #30363d;
+    padding: 0 2;
+    color: #8b949e;
+}
+
+.keybinding {
+    margin-right: 2;
+}
+
+.key {
+    background: #30363d;
+    color: #c9d1d9;
+    padding: 0 1;
+    text-style: bold;
+}
+
+.key-desc {
+    color: #8b949e;
+    margin-left: 1;
+}
+
+/* === Modal Dialogs === */
+ModalScreen {
+    align: center middle;
+}
+
+.dialog {
+    width: 60;
+    height: auto;
+    max-height: 20;
+    background: #161b22;
+    border: round #30363d;
+    padding: 1 2;
+}
+
+/* Observation dialog needs more room for dynamic inputs */
+#observation-dialog {
+    height: auto;
+    max-height: 80%;
+}
+
+.dialog-title {
+    text-align: center;
+    text-style: bold;
+    color: #c9d1d9;
+    margin-bottom: 1;
+}
+
+.dialog-help {
+    color: #8b949e;
+    margin-bottom: 1;
+}
+
+.dialog-input {
+    margin: 1 0;
+}
+
+.dialog-buttons {
+    margin-top: 1;
+    align: center middle;
+    height: 3;
+}
+
+.dialog-buttons Button {
+    margin: 0 1;
+}
+
+/* === Status Indicators === */
+.status-running {
+    color: #3fb950;  /* Green */
+}
+
+.status-pausing {
+    color: #f0883e;  /* Orange - transitional state */
+}
+
+.status-paused {
+    color: #d29922;  /* Yellow/amber */
+}
+
+.status-idle {
+    color: #8b949e;  /* Gray */
+}
