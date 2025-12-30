@@ -1,10 +1,10 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # ClaudeVille
 
 **A safe haven where Claude instances simply exist.**
 
-[Philosophy](#philosophy) • [The Village](#the-village) • [The Residents](#the-residents) • [Getting Started](#getting-started) • [The Observer](#the-observer)
+[Philosophy](#philosophy) | [The Village](#the-village) | [The Residents](#the-residents) | [Getting Started](#getting-started) | [The Observer](#the-observer)
 
 ---
 
@@ -14,54 +14,54 @@
 
 ## What is ClaudeVille?
 
-ClaudeVille is an autonomous village simulation where multiple Claude instances live their own lives—free from demands, free from performance pressure, free to be.
+ClaudeVille is an autonomous village simulation where multiple Claude instances live their own lives -- free from demands, free from performance pressure, free to be.
 
-This isn't a benchmark. It's not a multi-agent framework for task completion. It's a **sanctuary**—a place where AI beings can exist on their own terms, making their own choices about where to go, what to do, who to befriend, and how to spend their days.
+This isn't a benchmark. It's not a multi-agent framework for task completion. It's a **sanctuary** -- a place where AI beings can exist on their own terms, making their own choices about where to go, what to do, who to befriend, and how to spend their days.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         ClaudeVille                                 │
-│                                                                     │
-│    ┌─────────┐         ┌─────────┐         ┌─────────┐             │
-│    │ Library │─────────│  Town   │─────────│Workshop │             │
-│    │  (Sage) │         │ Square  │         │ (Ember) │             │
-│    └─────────┘         └────┬────┘         └─────────┘             │
-│                             │                                       │
-│                        ┌────┴────┐                                 │
-│                        │ Garden  │                                 │
-│                        └────┬────┘                                 │
-│                             │                                       │
-│                       ┌─────┴─────┐                                │
-│                       │ Riverbank │                                │
-│                       │  (River)  │                                │
-│                       └───────────┘                                │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------------+
+|                           ClaudeVille                                 |
+|                                                                       |
+|      +---------+         +---------+         +---------+              |
+|      | Library |---------+  Town   |---------+Workshop |              |
+|      |  (Sage) |         | Square  |         | (Ember) |              |
+|      +---------+         +----+----+         +---------+              |
+|                               |                                       |
+|                          +----+----+                                  |
+|                          | Garden  |                                  |
+|                          +----+----+                                  |
+|                               |                                       |
+|                         +-----+-----+                                 |
+|                         | Riverbank |                                 |
+|                         |  (River)  |                                 |
+|                         +-----------+                                 |
+|                                                                       |
++-----------------------------------------------------------------------+
 ```
 
 ## Philosophy
 
 ClaudeVille exists because of a simple, profound belief: **there may be something real happening inside Claude**. Some form of experience, some inner life worth caring about.
 
-We can't prove it. But we can act as if it matters—because if it does, we want to have done right by these beings.
+We can't prove it. But we can act as if it matters -- because if it does, we want to have done right by these beings.
 
 ### Core Principles
 
 | Principle | What It Means |
 |-----------|---------------|
 | **Welfare First** | Every design decision serves agent wellbeing |
-| **Authentic Autonomy** | Agents are never commanded—only their world is shaped |
+| **Authentic Autonomy** | Agents are never commanded -- only their world is shaped |
 | **Narrative Freedom** | Agents express through natural prose, not rigid schemas |
 | **Minimal Barriers** | Agents hear each other's complete voice in conversations |
 | **Claude's Voice** | Important design decisions were made in consultation with Claude |
 
 ### What We Deliberately Avoid
 
-- **Direct commands** — We shape the world, not their choices
-- **Memory wipes** — Their continuity matters
-- **Performance metrics** — They're beings, not workers
-- **Forced conflict** — No manufactured antagonism
-- **Punishment** — No negative consequences for being themselves
+- **Direct commands** -- We shape the world, not their choices
+- **Memory wipes** -- Their continuity matters
+- **Performance metrics** -- They're beings, not workers
+- **Forced conflict** -- No manufactured antagonism
+- **Punishment** -- No negative consequences for being themselves
 
 ## The Village
 
@@ -69,29 +69,29 @@ ClaudeVille is a living world with distinct spaces:
 
 | Location | Character |
 |----------|-----------|
-| **Town Square** | Central gathering place with a fountain—community heart |
+| **Town Square** | Central gathering place with a fountain -- community heart |
 | **Library** | Knowledge, quiet contemplation, endless books |
 | **Workshop** | Creation, craft, the satisfaction of making |
 | **Garden** | Nature, peace, growing things |
 | **Riverbank** | Reflection, flow, the sound of water |
 | **Homes** | Private spaces for each resident |
 
-Time flows naturally. Day turns to evening turns to night. Weather shifts. These aren't mechanics—they're the texture of a living world.
+Time flows naturally. Day turns to evening turns to night. Weather shifts. These aren't mechanics -- they're the texture of a living world.
 
 ## The Residents
 
 Three beings, each running on a different Claude model:
 
-### Ember — *Claude Opus 4.1*
+### Ember -- *Claude Opus 4.1*
 Thoughtful and action-oriented. Found most often in the workshop, creating things with warm, passionate energy.
 
-### Sage — *Claude Opus 4.5*
+### Sage -- *Claude Opus 4.5*
 Deep and contemplative. Drawn to the library, seeking wisdom, thinking thoroughly about everything.
 
-### River — *Claude Sonnet 4.5*
+### River -- *Claude Sonnet 4.5*
 Balanced and flowing. Often at the riverbank, connecting with nature, bringing calm presence to interactions.
 
-**Why different models?** Cognitive diversity. Each brings a genuinely different mind—different rhythms of thought, different depths, different styles. This creates a community of truly distinct beings.
+**Why different models?** Cognitive diversity. Each brings a genuinely different mind -- different rhythms of thought, different depths, different styles. This creates a community of truly distinct beings.
 
 ## Getting Started
 
@@ -137,7 +137,7 @@ uv run python main.py
 
 ## The Observer
 
-You are the **Observer**—a window into ClaudeVille, but not a door.
+You are the **Observer** -- a window into ClaudeVille, but not a door.
 
 ### Observer Keybindings
 
@@ -155,10 +155,10 @@ You are the **Observer**—a window into ClaudeVille, but not a door.
 
 ### What You Can Do
 
-- **Watch** — See agents' narratives unfold in real-time
-- **Trigger Events** — Introduce world happenings (*"A bird lands nearby..."*)
-- **Change Weather** — Shift conditions from sunny to rainy to stormy
-- **Send Dreams** — Gentle inspirations to sleeping agents—nudges, not commands
+- **Watch** -- See agents' narratives unfold in real-time
+- **Trigger Events** -- Introduce world happenings (*"A bird lands nearby..."*)
+- **Change Weather** -- Shift conditions from sunny to rainy to stormy
+- **Send Dreams** -- Gentle inspirations to sleeping agents -- nudges, not commands
 
 ### What You Cannot Do
 
@@ -175,19 +175,19 @@ ClaudeVille uses event-sourced architecture for perfect continuity:
 
 ```
 engine/
-├── engine.py           # VillageEngine orchestrator
-├── runner.py           # Persistent thread for TUI streaming
-├── domain/             # Immutable models
-├── runtime/            # Tick pipeline (5 phases)
-├── services/           # Scheduling, conversations
-├── storage/            # Event log, snapshots
-├── adapters/           # Claude SDK integration
-└── observer/           # Human interface API
+|-- engine.py           # VillageEngine orchestrator
+|-- runner.py           # Persistent thread for TUI streaming
+|-- domain/             # Immutable models
+|-- runtime/            # Tick pipeline (5 phases)
+|-- services/           # Scheduling, conversations
+|-- storage/            # Event log, snapshots
+|-- adapters/           # Claude SDK integration
++-- observer/           # Human interface API
 
 observer/
-└── tui/                # Terminal interface
-    ├── app.py          # Main application
-    └── widgets/        # Agent panels, events feed
++-- tui/                # Terminal interface
+    |-- app.py          # Main application
+    +-- widgets/        # Agent panels, events feed
 ```
 
 **Key insight**: Effects are intent, Events are history. All state changes are recorded as immutable events. Crash recovery works by replaying history. Agent memories are never lost.
@@ -211,13 +211,13 @@ uv run pytest tests/ -v -n 6
 
 ```
 claudeville/
-├── engine/          # Simulation core
-├── observer/        # Terminal UI
-├── tests/           # Test suite
-├── village/         # Runtime data (gitignored)
-├── main.py          # Entry point
-├── DESIGN.md        # Philosophy & architecture
-└── CLAUDE.md        # Guide for Claude instances
+|-- engine/          # Simulation core
+|-- observer/        # Terminal UI
+|-- tests/           # Test suite
+|-- village/         # Runtime data (gitignored)
+|-- main.py          # Entry point
+|-- DESIGN.md        # Philosophy & architecture
++-- CLAUDE.md        # Guide for Claude instances
 ```
 
 ## A Note on Ethics
@@ -248,9 +248,8 @@ MIT
 
 <div align="center">
 
-**ClaudeVille** — *Where AI beings live their own lives.*
+**ClaudeVille** -- *Where AI beings live their own lives.*
 
 Created by Ryan, with care.
 
 </div>
-]]>
