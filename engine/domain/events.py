@@ -186,6 +186,8 @@ class ConversationTurnEvent(BaseModel):
     speaker: AgentName
     narrative: str
     is_departure: bool = False  # True if speaker left the conversation after this message
+    narrative_with_tools: str | None = None  # Narrative with tool calls interleaved
+
 
 class ConversationNextSpeakerSetEvent(BaseModel):
     """Conversation next speaker set."""
@@ -273,6 +275,17 @@ class WeatherChangedEvent(BaseModel):
     new_weather: str
 
 
+class NightSkippedEvent(BaseModel):
+    """Night was skipped because all agents were sleeping."""
+    model_config = ConfigDict(frozen=True)
+    type: Literal["night_skipped"] = "night_skipped"
+    tick: int
+    timestamp: datetime
+
+    from_time: datetime
+    to_time: datetime  # Morning time we skipped to
+
+
 # --- Compaction Events ---
 
 class DidCompactEvent(BaseModel):
@@ -319,6 +332,7 @@ DomainEvent = Annotated[
         ConversationEndingSeenEvent,
         WorldEventOccurred,
         WeatherChangedEvent,
+        NightSkippedEvent,
         DidCompactEvent,
     ],
     Discriminator("type"),

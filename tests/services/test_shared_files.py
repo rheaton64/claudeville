@@ -6,8 +6,10 @@ from pathlib import Path
 from engine.services.shared_files import (
     LOCATION_SHARED_DIRS,
     ensure_agent_directory,
+    ensure_description_files,
     ensure_shared_directories,
     get_shared_dirs_for_location,
+    read_location_description,
     sync_shared_files_in,
     sync_shared_files_out,
     get_shared_file_list,
@@ -266,3 +268,127 @@ class TestGetSharedFileList:
 
         assert len(files) == 1
         assert any("nested.txt" in f for f in files)
+
+
+class TestEnsureDescriptionFiles:
+    """Tests for ensure_description_files function."""
+
+    def test_creates_description_files(self, temp_village_dir: Path):
+        """Test description files are created for each location."""
+        ensure_shared_directories(temp_village_dir)
+
+        descriptions = {
+            "workshop": "A cozy workshop.",
+            "library": "A quiet library.",
+        }
+        ensure_description_files(temp_village_dir, descriptions)
+
+        workshop_desc = temp_village_dir / "shared" / "workshop" / "description.md"
+        library_desc = temp_village_dir / "shared" / "library" / "description.md"
+
+        assert workshop_desc.exists()
+        assert library_desc.exists()
+
+    def test_includes_comment_in_file(self, temp_village_dir: Path):
+        """Test description files include helpful comment."""
+        ensure_shared_directories(temp_village_dir)
+
+        descriptions = {"workshop": "A cozy workshop."}
+        ensure_description_files(temp_village_dir, descriptions)
+
+        content = (
+            temp_village_dir / "shared" / "workshop" / "description.md"
+        ).read_text()
+
+        assert "<!--" in content
+        assert "Feel free to edit" in content
+        assert "A cozy workshop." in content
+
+    def test_does_not_overwrite_existing(self, temp_village_dir: Path):
+        """Test existing description files are not overwritten."""
+        ensure_shared_directories(temp_village_dir)
+
+        # Create an existing file
+        workshop_dir = temp_village_dir / "shared" / "workshop"
+        workshop_dir.mkdir(parents=True, exist_ok=True)
+        desc_file = workshop_dir / "description.md"
+        desc_file.write_text("Custom description by agents!")
+
+        descriptions = {"workshop": "Default description."}
+        ensure_description_files(temp_village_dir, descriptions)
+
+        # Should preserve the existing content
+        assert desc_file.read_text() == "Custom description by agents!"
+
+    def test_creates_parent_directories(self, temp_village_dir: Path):
+        """Test parent directories are created if needed."""
+        # Don't call ensure_shared_directories first
+        descriptions = {"new_location": "A brand new place."}
+        ensure_description_files(temp_village_dir, descriptions)
+
+        desc_file = temp_village_dir / "shared" / "new_location" / "description.md"
+        assert desc_file.exists()
+
+
+class TestReadLocationDescription:
+    """Tests for read_location_description function."""
+
+    def test_reads_description(self, temp_village_dir: Path):
+        """Test reading description from file."""
+        ensure_shared_directories(temp_village_dir)
+
+        # Create a description file
+        desc_file = temp_village_dir / "shared" / "workshop" / "description.md"
+        desc_file.write_text("A wonderful workshop full of tools.")
+
+        result = read_location_description(temp_village_dir, "workshop")
+
+        assert result == "A wonderful workshop full of tools."
+
+    def test_strips_html_comments(self, temp_village_dir: Path):
+        """Test HTML comments are stripped from output."""
+        ensure_shared_directories(temp_village_dir)
+
+        content = """<!-- This is a comment -->
+
+The actual description.
+
+<!-- Another comment -->"""
+        desc_file = temp_village_dir / "shared" / "workshop" / "description.md"
+        desc_file.write_text(content)
+
+        result = read_location_description(temp_village_dir, "workshop")
+
+        assert result == "The actual description."
+        assert "<!--" not in result
+
+    def test_returns_none_for_missing_file(self, temp_village_dir: Path):
+        """Test returns None when description file doesn't exist."""
+        ensure_shared_directories(temp_village_dir)
+
+        result = read_location_description(temp_village_dir, "workshop")
+
+        assert result is None
+
+    def test_returns_none_for_empty_file(self, temp_village_dir: Path):
+        """Test returns None when file is empty after stripping."""
+        ensure_shared_directories(temp_village_dir)
+
+        # Create a file with only comments
+        desc_file = temp_village_dir / "shared" / "workshop" / "description.md"
+        desc_file.write_text("<!-- Only a comment -->")
+
+        result = read_location_description(temp_village_dir, "workshop")
+
+        assert result is None
+
+    def test_strips_whitespace(self, temp_village_dir: Path):
+        """Test whitespace is stripped from result."""
+        ensure_shared_directories(temp_village_dir)
+
+        desc_file = temp_village_dir / "shared" / "workshop" / "description.md"
+        desc_file.write_text("  \n  A description with whitespace.  \n  ")
+
+        result = read_location_description(temp_village_dir, "workshop")
+
+        assert result == "A description with whitespace."

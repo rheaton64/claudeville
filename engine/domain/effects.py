@@ -144,6 +144,8 @@ class AddConversationTurnEffect(BaseModel):
     conversation_id: ConversationId
     speaker: AgentName
     narrative: str
+    narrative_with_tools: str | None = None  # Narrative with tool calls interleaved
+
 
 class SetNextSpeakerEffect(BaseModel):
     """Set the next speaker for a conversation."""

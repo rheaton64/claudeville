@@ -35,6 +35,7 @@ from engine.domain import (
     ConversationEndingUnseenEvent,
     ConversationEndingSeenEvent,
     WeatherChangedEvent,
+    NightSkippedEvent,
     DidCompactEvent,
 )
 from .snapshot_store import SnapshotStore, VillageSnapshot
@@ -49,7 +50,7 @@ class EventStore:
     This is the primary persistance mechanism. All state changes flow through here as DomainEvents.
     """
     
-    SNAPSHOT_INTERVAL = 1
+    SNAPSHOT_INTERVAL = 50
 
     def __init__(self, village_root: Path):
         self.village_root = village_root
@@ -314,6 +315,7 @@ class EventStore:
                         tick=event.tick,
                         timestamp=event.timestamp,
                         is_departure=event.is_departure,
+                        narrative_with_tools=event.narrative_with_tools,
                     )
                     conversations[event.conversation_id] = Conversation(
                         **{
@@ -369,6 +371,11 @@ class EventStore:
                 world = WorldSnapshot(
                     **{**world.model_dump(), "weather": Weather(event.new_weather)}
                 )
+
+            case NightSkippedEvent():
+                # Night skip updates world time (already handled via event.timestamp above)
+                # The to_time field is used for the timestamp, advancing to morning
+                pass
 
             case DidCompactEvent():
                 # Compaction events are recorded for history but don't update snapshot state

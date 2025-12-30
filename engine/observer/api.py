@@ -29,6 +29,7 @@ from engine.domain import (
     UpdateEnergyEffect,
     AgentSleepEffect,
     AgentWakeEffect,
+    SetNextSpeakerEffect,
     WorldEventOccurred,
     WeatherChangedEvent,
     AgentActionEvent,
@@ -538,6 +539,64 @@ class ObserverAPI:
 
         logger.info(f"OBSERVER_CMD | end_conversation | id={conv_id}")
         return self._engine.end_conversation(conv_id, reason="observer_ended")
+
+    def do_set_next_speaker(
+        self, agent_name: AgentName, next_speaker: AgentName
+    ) -> Effect | None:
+        """
+        Set the next speaker for a conversation that an agent is in.
+
+        This is used for manual observation when the interpreter missed
+        a next-speaker suggestion in the narrative.
+
+        Args:
+            agent_name: The agent who "suggested" the next speaker (must be in a conversation)
+            next_speaker: Who should speak next
+
+        Returns:
+            SetNextSpeakerEffect, or None if agent is not in a conversation
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            ConversationError: If next_speaker is not in the conversation
+        """
+        if agent_name not in self._engine.agents:
+            raise AgentNotFoundError(f"Unknown agent: {agent_name}")
+
+        if next_speaker not in self._engine.agents:
+            raise AgentNotFoundError(f"Unknown next speaker: {next_speaker}")
+
+        # Find the conversation that agent_name is in
+        conv_id = None
+        conv = None
+        for cid, c in self._engine.conversations.items():
+            if agent_name in c.participants:
+                conv_id = cid
+                conv = c
+                break
+
+        if not conv_id or not conv:
+            logger.warning(
+                f"OBSERVER_CMD | set_next_speaker | agent={agent_name} not in conversation"
+            )
+            return None
+
+        # Validate next_speaker is in the conversation
+        if next_speaker not in conv.participants:
+            raise ConversationError(
+                f"{next_speaker} is not in the conversation with {agent_name}"
+            )
+
+        logger.info(
+            f"OBSERVER_CMD | set_next_speaker | conv={conv_id} | next={next_speaker}"
+        )
+
+        effect = SetNextSpeakerEffect(
+            conversation_id=conv_id,
+            speaker=next_speaker,
+        )
+        self._engine.apply_effect(effect)
+        return effect
 
     # --- Compaction Control ---
 

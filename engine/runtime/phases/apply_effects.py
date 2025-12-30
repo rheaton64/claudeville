@@ -839,6 +839,7 @@ class ApplyEffectsPhase(BasePhase):
             narrative=effect.narrative,
             tick=ctx.tick,
             timestamp=ctx.timestamp,
+            narrative_with_tools=effect.narrative_with_tools,
         )
 
         new_conv = Conversation(**{
@@ -853,6 +854,7 @@ class ApplyEffectsPhase(BasePhase):
             conversation_id=effect.conversation_id,
             speaker=effect.speaker,
             narrative=effect.narrative,
+            narrative_with_tools=effect.narrative_with_tools,
         )
 
         return [event], ctx.with_updated_conversation(new_conv)

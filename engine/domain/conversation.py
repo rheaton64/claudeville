@@ -16,6 +16,7 @@ class ConversationTurn(BaseModel):
     tick: int
     timestamp: datetime
     is_departure: bool = False  # True if speaker left the conversation after this message
+    narrative_with_tools: str | None = None  # Narrative with tool calls interleaved
 
 class Invitation(BaseModel):
     """A pending invitation to a conversation."""

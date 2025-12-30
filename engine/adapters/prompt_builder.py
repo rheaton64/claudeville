@@ -116,7 +116,7 @@ When you've done what feels right for now - when you're ready to settle into res
         scene_parts = []
 
         # Location description
-        scene_parts.append(f"You are in {agent_context.location_description}.")
+        scene_parts.append(f"You are in:\n {agent_context.location_description}.")
 
         # Others present
         if agent_context.others_present:

@@ -21,6 +21,8 @@ class AgentTurnResult(BaseModel):
 
     # The full narrative response from the agent
     narrative: str
+    # Narrative with tool calls interleaved (for showing to other agents)
+    narrative_with_tools: str = ""
 
     # --- Movement ---
     # Where they moved (solo movement)

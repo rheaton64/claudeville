@@ -51,6 +51,7 @@ from .events import (
     ConversationEndingSeenEvent,
     WorldEventOccurred,
     WeatherChangedEvent,
+    NightSkippedEvent,
     DidCompactEvent,
 )
 
@@ -115,5 +116,6 @@ __all__ = [
     "ConversationEndingSeenEvent",
     "WorldEventOccurred",
     "WeatherChangedEvent",
+    "NightSkippedEvent",
     "DidCompactEvent",
 ]

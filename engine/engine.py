@@ -29,6 +29,8 @@ from engine.domain import (
     Invitation,
     LocationId,
     AgentMovedEvent,
+    NightSkippedEvent,
+    TimePeriod,
     TimeSnapshot,
     WorldSnapshot,
     ConversationEndedEvent,
@@ -349,6 +351,21 @@ class VillageEngine:
 
         # Determine what time to advance to
         due_time = self._compute_next_tick_time()
+
+        # Check for night skip: if all agents are sleeping, skip to morning
+        night_skip_event = None
+        if self._should_skip_night():
+            morning_time = self._compute_next_morning()
+            if morning_time > due_time:
+                night_skip_event = NightSkippedEvent(
+                    tick=self._tick + 1,
+                    timestamp=morning_time,
+                    from_time=self._time_snapshot.world_time if self._time_snapshot else due_time,
+                    to_time=morning_time,
+                )
+                due_time = morning_time
+                logger.info(f"Night skip: all agents sleeping, advancing to morning ({morning_time})")
+
         self._tick += 1
 
         # Update time snapshot
@@ -411,8 +428,13 @@ class VillageEngine:
 
         # Commit events to storage
         # Note: last_location_speaker is updated via AgentLastActiveTickUpdatedEvent
-        if result.events:
-            self.event_store.append_all(result.events)
+        # Prepend night skip event if we skipped the night
+        all_events = list(result.events)
+        if night_skip_event:
+            all_events.insert(0, night_skip_event)
+
+        if all_events:
+            self.event_store.append_all(all_events)
 
         # Update in-memory state from event store
         # Note: Don't reload scheduler state - preserve force/skip modifiers
@@ -433,8 +455,12 @@ class VillageEngine:
 
         # Update recent arrivals
         self._recent_arrivals = {
-            event.agent for event in result.events if isinstance(event, AgentMovedEvent) 
+            event.agent for event in result.events if isinstance(event, AgentMovedEvent)
         }
+
+        # Record turns for agents that acted (clears forced_next if applicable)
+        for agent in result.agents_acted:
+            self.scheduler.record_turn(agent)
 
         # Fire callbacks
         for callback in self._tick_callbacks:
@@ -469,6 +495,37 @@ class VillageEngine:
         if self._time_snapshot:
             return self._time_snapshot.timestamp + timedelta(minutes=Scheduler.SOLO_PACE_MINUTES)
         return datetime.now()
+
+    def _should_skip_night(self) -> bool:
+        """Check if we should skip to morning (all agents sleeping, not morning)."""
+        if not self._agents or not self._time_snapshot:
+            return False
+
+        # All agents must be sleeping
+        all_sleeping = all(agent.is_sleeping for agent in self._agents.values())
+        if not all_sleeping:
+            return False
+
+        # Must not already be morning
+        if self._time_snapshot.period == TimePeriod.MORNING:
+            return False
+
+        return True
+
+    def _compute_next_morning(self) -> datetime:
+        """Compute the datetime for the next 6 AM (start of morning)."""
+        if not self._time_snapshot:
+            return datetime.now()
+
+        current = self._time_snapshot.world_time
+        # If before 6 AM today, morning is today at 6 AM
+        # Otherwise, morning is tomorrow at 6 AM
+        morning_today = current.replace(hour=6, minute=0, second=0, microsecond=0)
+
+        if current.hour < 6:
+            return morning_today
+        else:
+            return morning_today + timedelta(days=1)
 
     def _ensure_schedule(self) -> None:
         """Seed the scheduler with pending events when needed."""

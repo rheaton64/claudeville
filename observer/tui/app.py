@@ -24,6 +24,7 @@ from .screens import (
     ConfirmEndConversationDialog, ManualObservationDialog,
     CompactDialog,
 )
+from engine.domain import AgentName
 from engine.observer.api import (
     ObserverError, AgentNotFoundError, InvalidLocationError, ConversationError,
 )
@@ -594,13 +595,18 @@ class ClaudeVilleTUI(App):
                 return
 
             elif tool_name == "report_next_speaker":
-                # This would need scheduler integration - skip for now
-                events_feed.add_simple_event(
-                    self.engine.tick,
-                    f"[Observer] Next speaker setting not supported yet",
-                    "system"
-                )
-                return
+                next_speaker = tool_input.get("next_speaker", "")
+                if next_speaker:
+                    result = observer.do_set_next_speaker(
+                        AgentName(agent_name), AgentName(next_speaker)
+                    )
+                    if result is None:
+                        events_feed.add_simple_event(
+                            self.engine.tick,
+                            f"[Observer] {agent_name} is not in a conversation",
+                            "system"
+                        )
+                        return
 
             else:
                 # Unknown tool - log it

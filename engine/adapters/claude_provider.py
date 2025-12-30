@@ -62,6 +62,32 @@ from .tracer import VillageTracer
 logger = logging.getLogger(__name__)
 
 
+def _format_tool_call(name: str, input_dict: dict[str, Any]) -> str:
+    """Format a tool call for display in conversation narrative.
+
+    Produces: [tool_name(arg1=val1, arg2=val2)]
+    """
+    # Strip MCP prefix if present
+    display_name = name.replace("mcp__village__", "")
+
+    if not input_dict:
+        return f"[{display_name}]"
+
+    # Format args, truncating long values
+    args = []
+    for k, v in input_dict.items():
+        if v is None:
+            continue
+        v_str = str(v)
+        if len(v_str) > 50:
+            v_str = v_str[:47] + "..."
+        args.append(f"{k}={v_str}")
+
+    if args:
+        return f"[{display_name}({', '.join(args)})]"
+    return f"[{display_name}]"
+
+
 # =============================================================================
 # Per-Agent Tool State
 # =============================================================================
@@ -369,7 +395,7 @@ class ClaudeProvider:
                 "agent": str(agent_name),
                 "tick": tool_context.tick_context.tick,
                 "location": str(agent_context.agent.location),
-                "prompt_preview": user_prompt[:2000] if len(user_prompt) > 2000 else user_prompt,
+                "prompt": user_prompt,
             },
             metadata={
                 "model": model_id,
@@ -387,8 +413,7 @@ class ClaudeProvider:
 
             # End LangSmith run with outputs
             run.end(outputs={
-                "narrative_length": len(result.narrative),
-                "narrative_preview": result.narrative[:1000] if len(result.narrative) > 1000 else result.narrative,
+                "narrative": result.narrative,
                 "effects_count": len(result.effects),
                 "effects": [type(e).__name__ for e in result.effects],
             })
@@ -459,6 +484,7 @@ class ClaudeProvider:
 
         # Collect narrative and metadata from response
         narrative_parts: list[str] = []
+        narrative_with_tools_parts: list[str] = []  # Interleaved text + tool calls
         message_count = 0
         session_id: str | None = None
         duration_ms: int = 0
@@ -473,6 +499,7 @@ class ClaudeProvider:
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         narrative_parts.append(block.text)
+                        narrative_with_tools_parts.append(block.text)
                         # Track on state for MCP tool handlers (under lock for thread safety)
                         state = self._agent_states[agent_name]
                         async with state._lock:
@@ -491,6 +518,10 @@ class ClaudeProvider:
 
                     elif isinstance(block, ToolUseBlock):
                         tool_calls_count += 1
+                        # Add formatted tool call to interleaved narrative
+                        narrative_with_tools_parts.append(
+                            _format_tool_call(block.name, block.input)
+                        )
                         if self._tracer:
                             self._tracer.log_tool_use(
                                 str(agent_name), block.id, block.name, block.input
@@ -578,6 +609,7 @@ class ClaudeProvider:
                     langsmith_run.metadata["tool_calls_count"] = tool_calls_count
 
         narrative = "\n".join(narrative_parts)
+        narrative_with_tools = "\n\n".join(narrative_with_tools_parts)
         logger.debug(f"[{agent_name}] receive_response() loop ended, got {message_count} messages, narrative_len={len(narrative)}")
 
         # End VillageTracer tracing (before interpretation)
@@ -622,7 +654,11 @@ class ClaudeProvider:
             f"effects={len(effects)}"
         )
 
-        return TurnResult(narrative=narrative, effects=list(effects))
+        return TurnResult(
+            narrative=narrative,
+            effects=list(effects),
+            narrative_with_tools=narrative_with_tools,
+        )
 
     async def _get_or_create_client(
         self,

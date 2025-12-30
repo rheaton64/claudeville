@@ -70,7 +70,12 @@ class InterpretPhase(BasePhase):
             if agent is None:
                 continue
 
-            task = self._interpret_turn(agent_name, turn_result.narrative, ctx)
+            task = self._interpret_turn(
+                agent_name,
+                turn_result.narrative,
+                turn_result.narrative_with_tools,
+                ctx,
+            )
             tasks.append((agent_name, task))
 
         # Gather results
@@ -105,6 +110,7 @@ class InterpretPhase(BasePhase):
         self,
         agent_name: AgentName,
         narrative: str,
+        narrative_with_tools: str,
         ctx: TickContext,
     ) -> tuple[AgentTurnResult, list[Effect]]:
         """
@@ -145,7 +151,9 @@ class InterpretPhase(BasePhase):
             )
 
         # Convert observations to effects
-        effects = self._observations_to_effects(agent_name, result, ctx)
+        effects = self._observations_to_effects(
+            agent_name, result, narrative_with_tools, ctx
+        )
 
         return result, effects
 
@@ -153,6 +161,7 @@ class InterpretPhase(BasePhase):
         self,
         agent_name: AgentName,
         result: AgentTurnResult,
+        narrative_with_tools: str,
         ctx: TickContext,
     ) -> list[Effect]:
         """Convert interpreted observations to effects."""
@@ -202,6 +211,7 @@ class InterpretPhase(BasePhase):
                 conversation_id=conv.id,
                 speaker=agent_name,
                 narrative=result.narrative,
+                narrative_with_tools=narrative_with_tools,
             ))
 
             if result.suggested_next_speaker and result.suggested_next_speaker in conv.participants:

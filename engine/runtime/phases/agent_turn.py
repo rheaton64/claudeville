@@ -451,6 +451,7 @@ class TurnResult:
 
     narrative: str
     effects: list[Effect]  # Already processed by tool handlers
+    narrative_with_tools: str = ""  # Narrative with tool calls interleaved
 
 
 @runtime_checkable
@@ -560,8 +561,11 @@ class AgentTurnPhase(BasePhase):
 
             turn_result = result
 
-            # Create interpreter-ready result (just narrative for now)
-            agent_turn_result = AgentTurnResult(narrative=turn_result.narrative)
+            # Create interpreter-ready result with narrative and tool calls
+            agent_turn_result = AgentTurnResult(
+                narrative=turn_result.narrative,
+                narrative_with_tools=turn_result.narrative_with_tools,
+            )
 
             # Get agent's location (from original ctx, before any moves this tick)
             agent = ctx.agents.get(agent_name)
@@ -682,7 +686,18 @@ class AgentTurnPhase(BasePhase):
         """Build the context for an agent's turn."""
         # Get location info
         location = ctx.world.locations.get(agent.location)
-        location_description = location.description if location else "Unknown location"
+
+        # Try to read description from shared file first (allows agent editing)
+        file_description = None
+        if self._village_root:
+            from engine.services.shared_files import read_location_description
+
+            file_description = read_location_description(
+                self._village_root, agent.location
+            )
+        location_description = file_description or (
+            location.description if location else "Unknown location"
+        )
 
         # Get others present (excluding self, excluding sleeping)
         others = [
@@ -711,12 +726,20 @@ class AgentTurnPhase(BasePhase):
 
             if agent_last_turn_idx >= 0:
                 unseen_history = [
-                    {"speaker": t.speaker, "narrative": t.narrative, "is_departure": t.is_departure}
+                    {
+                        "speaker": t.speaker,
+                        "narrative": t.narrative_with_tools or t.narrative,
+                        "is_departure": t.is_departure,
+                    }
                     for t in conversation.history[agent_last_turn_idx + 1:]
                 ]
             else:
                 unseen_history = [
-                    {"speaker": t.speaker, "narrative": t.narrative, "is_departure": t.is_departure}
+                    {
+                        "speaker": t.speaker,
+                        "narrative": t.narrative_with_tools or t.narrative,
+                        "is_departure": t.is_departure,
+                    }
                     for t in conversation.history
                 ]
 

@@ -20,7 +20,11 @@ from engine.domain import (
     Weather,
 )
 from engine.storage import VillageSnapshot
-from engine.services.shared_files import ensure_agent_directory, ensure_shared_directories
+from engine.services.shared_files import (
+    ensure_agent_directory,
+    ensure_description_files,
+    ensure_shared_directories,
+)
 
 
 @dataclass(frozen=True)
@@ -86,8 +90,8 @@ DEFAULT_LOCATIONS: dict[str, dict] = {
 DEFAULT_AGENTS: tuple[AgentSeed, ...] = (
     AgentSeed(
         name="Ember",
-        model_id="claude-haiku-4-5-20251001",
-        model_display="Haiku",
+        model_id="claude-sonnet-4-5-20250929",
+        model_display="Sonnet",
         model_provider="anthropic",
         personality="Thoughtful, deliberate, action-oriented. Warm, passionate energy.",
         job="Creating in the workshop",
@@ -205,6 +209,14 @@ def build_initial_snapshot(
     """Build a complete initial snapshot and ensure directories exist."""
     root = Path(village_root)
     ensure_village_structure(root)
+
+    # Create description.md files for each location (if they don't exist)
+    location_defs = locations or DEFAULT_LOCATIONS
+    location_descriptions = {
+        loc_id: data["description"]
+        for loc_id, data in location_defs.items()
+    }
+    ensure_description_files(root, location_descriptions)
 
     agent_snapshots = build_agent_snapshots(agents)
     for agent in agent_snapshots.values():

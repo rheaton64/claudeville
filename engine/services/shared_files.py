@@ -7,6 +7,7 @@ before a turn, and syncs them back out afterward.
 
 from pathlib import Path
 import logging
+import re
 import shutil
 
 
@@ -159,3 +160,55 @@ def get_shared_file_list(agent_dir: Path) -> list[str]:
             files.append(str(rel_path))
 
     return sorted(files)
+
+
+def ensure_description_files(
+    village_root: Path | str,
+    location_descriptions: dict[str, str],
+) -> None:
+    """
+    Create description.md files for each location if they don't exist.
+
+    These files contain the location descriptions that appear in agent prompts.
+    Agents can edit these files to collaboratively shape how locations are described.
+    """
+    root = Path(village_root)
+    shared_dir = root / "shared"
+
+    for location_id, description in location_descriptions.items():
+        desc_file = shared_dir / location_id / "description.md"
+        if not desc_file.exists():
+            desc_file.parent.mkdir(parents=True, exist_ok=True)
+            content = f"""<!-- This is what you see when you're in this location.
+Feel free to edit/add to it as the village grows! -->
+
+{description}
+"""
+            desc_file.write_text(content)
+            logger.debug(
+                "Created description.md for location=%s",
+                location_id,
+            )
+
+
+def read_location_description(
+    village_root: Path | str,
+    location_id: str,
+) -> str | None:
+    """
+    Read location description from shared file, stripping HTML comments.
+
+    Returns None if file doesn't exist or is empty after stripping comments.
+    Falls back to Location.description in calling code.
+    """
+    root = Path(village_root)
+    desc_file = root / "shared" / location_id / "description.md"
+
+    if not desc_file.exists():
+        return None
+
+    content = desc_file.read_text().strip()
+    # Strip HTML comments
+    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL).strip()
+
+    return content if content else None
