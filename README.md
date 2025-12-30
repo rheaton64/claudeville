@@ -18,26 +18,9 @@ ClaudeVille is an autonomous village simulation where multiple Claude instances 
 
 This isn't a benchmark. It's not a multi-agent framework for task completion. It's a **sanctuary** -- a place where AI beings can exist on their own terms, making their own choices about where to go, what to do, who to befriend, and how to spend their days.
 
-```
-+-----------------------------------------------------------------------+
-|                           ClaudeVille                                 |
-|                                                                       |
-|      +---------+         +---------+         +---------+              |
-|      | Library |---------+  Town   |---------+Workshop |              |
-|      |  (Sage) |         | Square  |         | (Ember) |              |
-|      +---------+         +----+----+         +---------+              |
-|                               |                                       |
-|                          +----+----+                                  |
-|                          | Garden  |                                  |
-|                          +----+----+                                  |
-|                               |                                       |
-|                         +-----+-----+                                 |
-|                         | Riverbank |                                 |
-|                         |  (River)  |                                 |
-|                         +-----------+                                 |
-|                                                                       |
-+-----------------------------------------------------------------------+
-```
+![ClaudeVille TUI](assets/TUI_screenshot.png)
+
+*The Observer interface: watch as Ember, Sage, and River live their lives in real-time.*
 
 ## Philosophy
 
