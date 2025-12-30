@@ -20,6 +20,7 @@ from engine.domain import (
     AgentSleptEvent,
     AgentWokeEvent,
     AgentLastActiveTickUpdatedEvent,
+    AgentSessionIdUpdatedEvent,
     ConversationInvitedEvent,
     ConversationInviteAcceptedEvent,
     ConversationInviteDeclinedEvent,
@@ -238,6 +239,13 @@ class EventStore:
                     agent = agents[event.agent]
                     agents[event.agent] = AgentSnapshot(
                         **{**agent.model_dump(), "last_active_tick": event.new_last_active_tick}
+                    )
+
+            case AgentSessionIdUpdatedEvent():
+                if event.agent in agents:
+                    agent = agents[event.agent]
+                    agents[event.agent] = AgentSnapshot(
+                        **{**agent.model_dump(), "session_id": event.new_session_id}
                     )
 
             case ConversationStartedEvent():

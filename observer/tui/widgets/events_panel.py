@@ -11,6 +11,11 @@ if TYPE_CHECKING:
     from engine.domain import DomainEvent
 
 
+# Event types to hide from the feed (descriptive only, no state change)
+HIDDEN_EVENT_TYPES = {
+    "agent_action",  # Interpreter-reported actions (just prose, no state change)
+}
+
 # Map DomainEvent type literals to display colors
 DOMAIN_EVENT_COLORS = {
     # Agent events
@@ -113,6 +118,10 @@ class EventsFeed(Vertical):
 
     def add_domain_event(self, event: "DomainEvent") -> None:
         """Add a DomainEvent to the feed."""
+        # Skip hidden event types (descriptive only, no state change)
+        if event.type in HIDDEN_EVENT_TYPES:
+            return
+
         log = self.query_one("#events-log", RichLog)
 
         text = Text()
@@ -164,9 +173,12 @@ class EventsFeed(Vertical):
 
         for event in events[-self._max_events:]:
             if hasattr(event, "type") and hasattr(event, "tick"):
-                # DomainEvent object
+                # DomainEvent object - add_domain_event handles filtering
                 self.add_domain_event(event)
             elif isinstance(event, dict):
+                # Dict events - check for hidden types
+                if event.get("type") in HIDDEN_EVENT_TYPES:
+                    continue
                 self.add_event_dict(event)
 
     def clear(self) -> None:
