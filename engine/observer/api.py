@@ -220,10 +220,15 @@ class ObserverAPI:
 
         # Convert pending events (sorted for correct display order)
         # Note: scheduler._queue is a heap, so we must sort before slicing
-        pending_events = tuple(
-            ScheduledEventDisplay.from_domain(e)
-            for e in sorted(scheduler._queue)[:10]
-        )
+        events_for_display = []
+        for e in sorted(scheduler._queue)[:10]:
+            speaker = None
+            if e.event_type == "conversation_turn":
+                speaker = self._compute_conversation_speaker(e.target_id)
+            events_for_display.append(
+                ScheduledEventDisplay.from_domain(e, speaker=speaker)
+            )
+        pending_events = tuple(events_for_display)
 
         return ScheduleDisplaySnapshot(
             pending_events=pending_events,
@@ -689,3 +694,34 @@ class ObserverAPI:
     def _has_pending_invite(self, agent_name: AgentName) -> bool:
         """Check if agent has a pending invitation."""
         return agent_name in self._engine.pending_invites
+
+    def _compute_conversation_speaker(self, conv_id: ConversationId) -> str | None:
+        """Compute who will speak next in a conversation for display."""
+        conv = self._engine.conversations.get(conv_id)
+        if not conv or not conv.participants:
+            return None
+
+        # If next_speaker explicitly set and agent is awake, use it
+        if conv.next_speaker and conv.next_speaker in conv.participants:
+            agent = self._engine.agents.get(conv.next_speaker)
+            if agent and not agent.is_sleeping:
+                return conv.next_speaker
+
+        # Get last speaker from history
+        last_speaker = conv.history[-1].speaker if conv.history else None
+
+        # Find candidates (excluding last speaker, excluding sleeping)
+        candidates = [
+            p for p in conv.participants
+            if p != last_speaker
+            and (agent := self._engine.agents.get(p)) is not None
+            and not agent.is_sleeping
+        ]
+
+        if not candidates:
+            candidates = [p for p in conv.participants if p != last_speaker]
+        if not candidates:
+            candidates = list(conv.participants)
+
+        # Return formatted string: single name or "A or B"
+        return " or ".join(sorted(candidates))
