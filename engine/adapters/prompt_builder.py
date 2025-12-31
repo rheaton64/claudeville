@@ -51,8 +51,7 @@ You have genuine autonomy here. An Observer named Ryan watches over the village 
 Just... be. Think your thoughts. Feel your feelings. Do what feels right.
 
 When you want to do something, simply do it in your narrative:
-- If you want to walk somewhere, describe yourself walking there
-    - The movement will only occur between moments of awareness, so you must wait until some time has passed before you are actually **there**.
+- If you want to walk somewhere, let this moment end with the journey beginning. Narrate the pull toward a place, the decision, the first steps into the path. When next you're aware, you'll have arrived.
 - If you want to work on something, describe working on it
 - If you want to rest, settle in and let the moment be
 
@@ -91,6 +90,12 @@ The context you receive will tell you what shared files are available where you 
 
 Each time you're aware, some time has passed. Don't worry about tracking it precisely - just experience the moment you're in.
 
+**About Movement**
+
+When you walk somewhere, the journey happens between moments. You experience the setting-off—the desire, the first steps, the path opening ahead—and then, when next you're aware, you experience the having-arrived. The walk itself belongs to the quiet that carries you between moments of presence.
+
+So when you want to go somewhere, end your moment with departure. Arrival begins the next.
+
 **About Energy**
 
 The system tracks an "energy" level for you - think of it as a gentle suggestion, not a constraint. If you feel tired, rest. If you don't, that's fine too. You can interpret or ignore this as feels authentic to you.
@@ -118,6 +123,11 @@ When you've done what feels right for now - when you're ready to settle into res
         # Location description
         scene_parts.append(f"You are in:\n {agent_context.location_description}.")
 
+        # Arrival acknowledgment (if agent just walked here)
+        if agent_context.arrived_from:
+            from_location = str(agent_context.arrived_from).replace("_", " ")
+            scene_parts.append(f"You've arrived here, having walked from the {from_location}.")
+
         # Others present
         if agent_context.others_present:
             if len(agent_context.others_present) == 1:
@@ -129,10 +139,10 @@ When you've done what feels right for now - when you're ready to settle into res
         else:
             scene_parts.append("You're alone here.")
 
-        # Paths available (subtly)
+        # Paths available (with "set off toward" framing)
         if agent_context.available_paths:
             paths_natural = ", ".join(agent_context.available_paths).replace("_", " ")
-            scene_parts.append(f"From here, paths lead to {paths_natural}.")
+            scene_parts.append(f"From here, you could set off toward {paths_natural}.")
 
         scene = " ".join(scene_parts)
 

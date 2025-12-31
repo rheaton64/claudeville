@@ -40,6 +40,7 @@ from engine.domain import (
     WeatherChangedEvent,
     UpdateLastActiveTickEffect,
     ShouldCompactEffect,
+    AgentMovedEvent,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -95,6 +96,9 @@ class AgentContext:
 
     # Unseen conversation endings (other participant left with a final message)
     unseen_endings: list[UnseenConversationEnding] | None = None
+
+    # If agent just arrived here, where they came from
+    arrived_from: LocationId | None = None
 
 
 # =============================================================================
@@ -766,6 +770,9 @@ class AgentTurnPhase(BasePhase):
         # Get unseen conversation endings
         unseen_endings = ctx.unseen_endings.get(agent.name)
 
+        # Check if agent just arrived (moved since their last active tick)
+        arrived_from = self._get_arrival_from(agent)
+
         return AgentContext(
             agent=agent,
             location_description=location_description,
@@ -784,6 +791,7 @@ class AgentTurnPhase(BasePhase):
             recent_events=recent_event_descriptions if recent_event_descriptions else None,
             unseen_dreams=unseen_dreams if unseen_dreams else None,
             unseen_endings=unseen_endings if unseen_endings else None,
+            arrived_from=arrived_from,
         )
 
     def _get_recent_events(self) -> list[DomainEvent]:
@@ -798,6 +806,32 @@ class AgentTurnPhase(BasePhase):
             limit=20,
             event_types={"world_event", "weather_changed"},
         )
+
+    def _get_arrival_from(self, agent: AgentSnapshot) -> LocationId | None:
+        """Check if agent moved since their last active tick.
+
+        Returns the location they came from if they just arrived, None otherwise.
+        This helps acknowledge the journey that happened between moments.
+        """
+        if self._event_store is None:
+            return None
+
+        # Look for movement events since the agent's last turn
+        since_tick = agent.last_active_tick
+        events = self._event_store.get_recent_events(
+            limit=10,
+            event_types={"agent_moved"},
+            since_tick=since_tick,
+        )
+
+        # Find the most recent move for this agent
+        for event in reversed(events):
+            if isinstance(event, AgentMovedEvent) and event.agent == agent.name:
+                # Verify they actually arrived at their current location
+                if event.to_location == agent.location:
+                    return event.from_location
+
+        return None
 
     def _filter_recent_event_descriptions(
         self,

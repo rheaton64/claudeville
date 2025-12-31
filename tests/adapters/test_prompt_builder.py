@@ -165,10 +165,10 @@ class TestBuildUserPrompt:
         assert "are here" in prompt
 
     def test_includes_available_paths(self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext):
-        """Test user prompt includes available paths."""
+        """Test user prompt includes available paths with 'set off toward' framing."""
         prompt = prompt_builder.build_user_prompt(basic_agent_context)
 
-        assert "paths lead to" in prompt
+        assert "set off toward" in prompt
         assert "town square" in prompt  # Underscores replaced
 
     def test_ends_with_this_moment_is_yours(self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext):
@@ -823,3 +823,32 @@ class TestBuildUserPromptUnseenEndings:
         prompt = prompt_builder.build_user_prompt(ctx)
 
         assert "Conversations that ended" not in prompt
+
+
+class TestBuildUserPromptArrival:
+    """Tests for arrival acknowledgment in user prompt."""
+
+    def test_shows_arrival_from_location(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that arrival acknowledgment shows previous location."""
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "arrived_from": LocationId("town_square")}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "arrived here" in prompt.lower()
+        assert "town square" in prompt  # Underscores replaced
+
+    def test_no_arrival_when_not_moved(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that no arrival text appears when agent hasn't moved."""
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "arrived_from": None}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "arrived here" not in prompt.lower()
