@@ -218,10 +218,11 @@ class ObserverAPI:
         """Get current scheduling state for display."""
         scheduler = self._engine.scheduler
 
-        # Convert pending events
+        # Convert pending events (sorted for correct display order)
+        # Note: scheduler._queue is a heap, so we must sort before slicing
         pending_events = tuple(
             ScheduledEventDisplay.from_domain(e)
-            for e in scheduler._queue[:10]  # Show first 10
+            for e in sorted(scheduler._queue)[:10]
         )
 
         return ScheduleDisplaySnapshot(
