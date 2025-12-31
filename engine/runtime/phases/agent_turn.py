@@ -336,27 +336,24 @@ def process_move_conversation(tool_input: dict, ctx: ToolContext) -> list[Effect
 register_conversation_tool(
     name="invite_to_conversation",
     description=(
-        "Invite another agent to have a conversation with you. "
-        "They must accept before the conversation begins."
+        "Reach toward another agent to start a conversation. "
+        "They'll receive your invitation and choose whether to join you."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "invitee": {
                 "type": "string",
-                "description": "Name of the agent to invite",
+                "description": "The agent you want to talk with",
             },
             "privacy": {
                 "type": "string",
                 "enum": ["public", "private"],
-                "description": (
-                    "Public conversations can be joined by others; "
-                    "private conversations require invitation"
-                ),
+                "description": "Public lets others join; private keeps it between you two",
             },
             "topic": {
                 "type": "string",
-                "description": "Optional topic or reason for the conversation",
+                "description": "What you'd like to talk about (optional)",
             },
         },
         "required": ["invitee", "privacy"],
@@ -367,8 +364,8 @@ register_conversation_tool(
 register_conversation_tool(
     name="accept_invite",
     description=(
-        "Accept a pending conversation invitation from another agent. "
-        "Anything you write after this tool call becomes your first words in the conversation."
+        "Step into a conversation someone has invited you to. "
+        "Whatever you write after this becomes your first words to them."
     ),
     input_schema={
         "type": "object",
@@ -380,7 +377,10 @@ register_conversation_tool(
 
 register_conversation_tool(
     name="decline_invite",
-    description="Politely decline a pending conversation invitation.",
+    description=(
+        "Let them know you can't talk right now. "
+        "They'll know you declined, though not why—that's yours to share or keep."
+    ),
     input_schema={
         "type": "object",
         "properties": {},
@@ -392,16 +392,16 @@ register_conversation_tool(
 register_conversation_tool(
     name="join_conversation",
     description=(
-        "Join a public conversation happening at your location. "
-        "Specify the name of someone already in the conversation. "
-        "Anything you write after this tool call becomes your first words in the conversation."
+        "Step into a public conversation happening nearby. "
+        "Name someone in it so the village knows which one. "
+        "Whatever you write after this becomes your first words."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "participant": {
                 "type": "string",
-                "description": "Name of someone in the conversation you want to join",
+                "description": "Someone already in the conversation",
             },
         },
         "required": ["participant"],
@@ -412,8 +412,8 @@ register_conversation_tool(
 register_conversation_tool(
     name="leave_conversation",
     description=(
-        "Leave the conversation you're currently in. "
-        "Anything you wrote before this tool call becomes your parting words."
+        "Step away from the conversation. "
+        "Whatever you wrote just before this becomes your parting words."
     ),
     input_schema={
         "type": "object",
@@ -425,17 +425,16 @@ register_conversation_tool(
 register_conversation_tool(
     name="move_conversation",
     description=(
-        "Move the entire conversation to a new location. "
-        "All participants travel together to the destination. "
-        "The destination must be connected to your current location. "
-        "Consider checking that everyone is ready to move first."
+        "Travel together to a new location, bringing the conversation with you. "
+        "Everyone moves as one. "
+        "You might want to check that others are ready before setting off."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "destination": {
                 "type": "string",
-                "description": "The location to move to (must be connected to current location)",
+                "description": "Where to go together (must connect to where you are now)",
             },
         },
         "required": ["destination"],
