@@ -165,10 +165,10 @@ class TestBuildUserPrompt:
         assert "are here" in prompt
 
     def test_includes_available_paths(self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext):
-        """Test user prompt includes available paths."""
+        """Test user prompt includes available paths with 'set off toward' framing."""
         prompt = prompt_builder.build_user_prompt(basic_agent_context)
 
-        assert "paths lead to" in prompt
+        assert "set off toward" in prompt
         assert "town square" in prompt  # Underscores replaced
 
     def test_ends_with_this_moment_is_yours(self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext):
@@ -395,7 +395,7 @@ class TestBuildUserPromptJoinable:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "public conversations" in prompt.lower()
+        assert "conversation is happening" in prompt.lower()
         assert "Sage" in prompt
         assert "join_conversation" in prompt
 
@@ -426,8 +426,8 @@ class TestBuildUserPromptNonParticipants:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "River can't hear your words" in prompt
-        assert "Invite them to the conversation" in prompt
+        assert "River is nearby but not part of this conversation" in prompt
+        assert "invite_to_conversation" in prompt
 
     def test_shows_non_participant_note_multiple(
         self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
@@ -452,8 +452,8 @@ class TestBuildUserPromptNonParticipants:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "River and Luna can't hear your words" in prompt
-        assert "Invite them to the conversation" in prompt
+        assert "River and Luna are nearby but not part of this conversation" in prompt
+        assert "invite_to_conversation" in prompt
 
     def test_no_note_when_all_present_are_participants(
         self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
@@ -519,8 +519,8 @@ class TestBuildUserPromptNonParticipants:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "Sage can't hear your words" in prompt
-        assert "Invite them to the conversation" in prompt
+        assert "If you'd like to talk with Sage" in prompt
+        assert "invite_to_conversation" in prompt
 
     def test_shows_note_when_not_in_conversation_multiple(
         self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
@@ -536,8 +536,8 @@ class TestBuildUserPromptNonParticipants:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "Sage and River can't hear your words" in prompt
-        assert "Invite them to the conversation" in prompt
+        assert "If you'd like to talk with Sage and River" in prompt
+        assert "invite_to_conversation" in prompt
 
     def test_no_note_when_alone_not_in_conversation(
         self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
@@ -759,7 +759,7 @@ class TestBuildUserPromptUnseenEndings:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "Conversations that ended" in prompt
+        assert "While you were away" in prompt
         assert "Sage" in prompt
         assert "Goodbye, my friend!" in prompt
         assert "parting words" in prompt
@@ -780,7 +780,7 @@ class TestBuildUserPromptUnseenEndings:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "Conversations that ended" in prompt
+        assert "While you were away" in prompt
         assert "River" in prompt
         # No parting words since there's no final message
         assert "parting words" not in prompt
@@ -822,4 +822,33 @@ class TestBuildUserPromptUnseenEndings:
 
         prompt = prompt_builder.build_user_prompt(ctx)
 
-        assert "Conversations that ended" not in prompt
+        assert "While you were away" not in prompt
+
+
+class TestBuildUserPromptArrival:
+    """Tests for arrival acknowledgment in user prompt."""
+
+    def test_shows_arrival_from_location(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that arrival acknowledgment shows previous location."""
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "arrived_from": LocationId("town_square")}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "arrived here" in prompt.lower()
+        assert "town square" in prompt  # Underscores replaced
+
+    def test_no_arrival_when_not_moved(
+        self, prompt_builder: PromptBuilder, basic_agent_context: AgentContext
+    ):
+        """Test that no arrival text appears when agent hasn't moved."""
+        ctx = AgentContext(
+            **{**basic_agent_context.__dict__, "arrived_from": None}
+        )
+
+        prompt = prompt_builder.build_user_prompt(ctx)
+
+        assert "arrived here" not in prompt.lower()

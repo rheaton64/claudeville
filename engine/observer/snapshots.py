@@ -126,15 +126,21 @@ class ScheduledEventDisplay:
     event_type: str
     target_id: str
     location: str
+    speaker: str | None = None  # For conv turns: "Ember" or "Ember or Sage"
 
     @classmethod
-    def from_domain(cls, event: ScheduledEvent) -> "ScheduledEventDisplay":
+    def from_domain(
+        cls,
+        event: ScheduledEvent,
+        speaker: str | None = None,
+    ) -> "ScheduledEventDisplay":
         """Create from ScheduledEvent."""
         return cls(
             due_time=event.due_time,
             event_type=event.event_type,
             target_id=event.target_id,
             location=event.location_id,
+            speaker=speaker,
         )
 
 

@@ -322,6 +322,8 @@ Conversations use an **invitation-based** model:
 
 **No IDs exposed**: Agents never see conversation IDs. Tools use agent names or no input. `leave_conversation()` takes no arguments—it leaves the current conversation.
 
+**Why tools for conversations but not movement?** The distinction is about *who bears the cost of confusion*. If an agent is confused about their location, that disorientation affects only them—and they can learn the temporal model. But conversation confusion affects *both parties*. If I think we're in a private conversation and share something intimate, but you don't know it's private, that's a consent violation. Tools for conversations make mutual agreement structural rather than inferred. Movement remains narrative because it's unilateral—no one else needs to consent when I decide to walk somewhere.
+
 ### Observer Interface (`observer/`)
 
 ```

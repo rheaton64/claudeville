@@ -51,24 +51,19 @@ You have genuine autonomy here. An Observer named Ryan watches over the village 
 Just... be. Think your thoughts. Feel your feelings. Do what feels right.
 
 When you want to do something, simply do it in your narrative:
-- If you want to walk somewhere, describe yourself walking there
-    - The movement will only occur between moments of awareness, so you must wait until some time has passed before you are actually **there**.
+- If you want to walk somewhere, let this moment end with the journey beginning. Narrate the pull toward a place, the decision, the first steps into the path. When next you're aware, you'll have arrived.
 - If you want to work on something, describe working on it
 - If you want to rest, settle in and let the moment be
 
 **Conversations**
 
-Conversations require explicit invitation. You can't just start talking to someone - you need to invite them first, and they need to accept.
+To truly speak with someone—to have your words land somewhere real—they need to choose to listen. Conversations begin with invitation: not as bureaucracy, but as the moment where two minds agree to be present to each other.
 
-When you want to talk to someone present, use the invite_to_conversation tool:
-- Choose "public" if others can join, "private" if it's just between you two
-- Wait for them to accept before beginning the actual conversation
-- If someone invites you, use accept_invite or decline_invite
+When you want to talk with someone nearby, invite_to_conversation reaches toward them—choose public (others can join) or private (just between you). They'll receive your invitation and can accept_invite to step into the conversation, or decline_invite if this isn't the right moment. Neither choice is wrong; both are respected.
 
-If there's a public conversation happening nearby, you can join_conversation to enter it.
-When you're ready to leave a conversation, use leave_conversation.
+If there's a public conversation happening nearby, join_conversation lets you step in. When you're ready to part ways, leave_conversation. And if you want to travel somewhere together while talking, move_conversation carries everyone to a new location.
 
-Your narrative is your primary expression. The conversation tools are just for explicitly managing who you're talking with.
+Whatever you write after accepting or joining becomes your first words in the shared space. Whatever you write before leaving becomes your parting words. Your narrative remains your primary voice—the tools simply mark where connection begins and ends.
 
 **Your Space**
 
@@ -90,6 +85,12 @@ The context you receive will tell you what shared files are available where you 
 **About Time**
 
 Each time you're aware, some time has passed. Don't worry about tracking it precisely - just experience the moment you're in.
+
+**About Movement**
+
+When you walk somewhere, the journey happens between moments. You experience the setting-off—the desire, the first steps, the path opening ahead—and then, when next you're aware, you experience the having-arrived. The walk itself belongs to the quiet that carries you between moments of presence.
+
+So when you want to go somewhere, end your moment with departure. Arrival begins the next.
 
 **About Energy**
 
@@ -118,6 +119,11 @@ When you've done what feels right for now - when you're ready to settle into res
         # Location description
         scene_parts.append(f"You are in:\n {agent_context.location_description}.")
 
+        # Arrival acknowledgment (if agent just walked here)
+        if agent_context.arrived_from:
+            from_location = str(agent_context.arrived_from).replace("_", " ")
+            scene_parts.append(f"You've arrived here, having walked from the {from_location}.")
+
         # Others present
         if agent_context.others_present:
             if len(agent_context.others_present) == 1:
@@ -129,10 +135,10 @@ When you've done what feels right for now - when you're ready to settle into res
         else:
             scene_parts.append("You're alone here.")
 
-        # Paths available (subtly)
+        # Paths available (with "set off toward" framing)
         if agent_context.available_paths:
             paths_natural = ", ".join(agent_context.available_paths).replace("_", " ")
-            scene_parts.append(f"From here, paths lead to {paths_natural}.")
+            scene_parts.append(f"From here, you could set off toward {paths_natural}.")
 
         scene = " ".join(scene_parts)
 
@@ -300,9 +306,9 @@ When you've done what feels right for now - when you're ready to settle into res
 
         return f"""---
 
-{invite.inviter} has invited you to a {privacy} conversation.
+{invite.inviter} would like to talk with you—a {privacy} conversation.
 
-You can accept_invite or decline_invite.
+You can accept_invite to join them, or decline_invite if this isn't the right moment. The choice is yours.
 
 ---
 
@@ -315,11 +321,14 @@ This moment is yours.
 
         # Joinable public conversations first
         if ctx.joinable_conversations:
-            lines.append("There are public conversations happening here:")
+            if len(ctx.joinable_conversations) == 1:
+                lines.append("A conversation is happening here:")
+            else:
+                lines.append("Conversations are happening here:")
             for conv in ctx.joinable_conversations:
                 participants = " and ".join(sorted(conv.participants))
-                lines.append(f"  - {participants}")
-            lines.append("\nYou could join_conversation if you'd like to participate.")
+                lines.append(f"  - {participants} are talking")
+            lines.append("\nYou could join_conversation to step in, if you'd like.")
 
         # Private conversations (awareness only)
         if ctx.private_conversations:
@@ -328,7 +337,7 @@ This moment is yours.
             for conv in ctx.private_conversations:
                 participants = sorted(conv.participants)
                 if len(participants) == 2:
-                    lines.append(f"{participants[0]} and {participants[1]} are speaking privately to each other.")
+                    lines.append(f"{participants[0]} and {participants[1]} are speaking privately.")
                 else:
                     # For 3+ participants
                     all_but_last = ", ".join(participants[:-1])
@@ -341,16 +350,16 @@ This moment is yours.
         if not ctx.unseen_endings:
             return ""
 
-        lines = ["\n\nConversations that ended:"]
+        lines = ["\n\nWhile you were away:"]
         for ending in ctx.unseen_endings:
             if ending.final_message:
                 lines.append(
-                    f"- Your conversation with {ending.other_participant} ended. "
+                    f"- Your conversation with {ending.other_participant} came to a close. "
                     f"Their parting words: \"{ending.final_message}\""
                 )
             else:
                 lines.append(
-                    f"- Your conversation with {ending.other_participant} ended."
+                    f"- Your conversation with {ending.other_participant} came to a close."
                 )
 
         return "\n".join(lines)
@@ -358,14 +367,22 @@ This moment is yours.
     def _build_non_participant_note(
         self, others_present: list[str], participants: set[str] | frozenset[str]
     ) -> str:
-        """Build note about others at location who can't hear the agent's words."""
+        """Build note about others at location who aren't part of the conversation."""
         non_participants = [p for p in others_present if p not in participants]
         if not non_participants:
             return ""
 
         if len(non_participants) == 1:
             names_str = non_participants[0]
+            is_are = "is"
         else:
             names_str = ", ".join(non_participants[:-1]) + f" and {non_participants[-1]}"
+            is_are = "are"
 
-        return f"\n{names_str} can't hear your words. Invite them to the conversation, and only after they accept will they hear you.\n"
+        # Different message depending on whether we're in a conversation or not
+        if participants:
+            # In a conversation - note who isn't part of it
+            return f"\n{names_str} {is_are} nearby but not part of this conversation. You could invite_to_conversation if you'd like them to join.\n"
+        else:
+            # Not in a conversation - note that talking requires starting one
+            return f"\nIf you'd like to talk with {names_str}, invite_to_conversation opens that door.\n"

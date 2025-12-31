@@ -481,6 +481,10 @@ class VillageEngine:
                 except Exception as e:
                     logger.error(f"Event callback error: {e}")
 
+        # Re-seed the schedule for display purposes
+        # This ensures the scheduler reflects who will act on the NEXT tick
+        self._ensure_schedule()
+
         logger.info(
             f"Tick {self._tick} complete | "
             f"events={len(result.events)} | "
