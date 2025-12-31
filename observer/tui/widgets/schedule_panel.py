@@ -173,7 +173,17 @@ class ScheduleStatusPanel(Vertical):
                 text.append(f"{target}", style=color)
                 text.append(f" @ {location}", style="dim")
             elif event_type == "conversation_turn":
-                text.append("Conv turn", style="#a78bfa")
+                if event.speaker:
+                    # Color each agent name in the speaker string
+                    speakers = event.speaker.split(" or ")
+                    for j, name in enumerate(speakers):
+                        if j > 0:
+                            text.append(" or ", style="dim")
+                        color = self._get_agent_color(name)
+                        text.append(name, style=color)
+                    text.append(" (conv)", style="dim")
+                else:
+                    text.append("Conv turn", style="#a78bfa")
                 text.append(f" @ {location}", style="dim")
             elif event_type == "invite_response":
                 text.append(f"Invite for {target}", style="#f0883e")
