@@ -47,6 +47,7 @@ from engine.domain import (
     AcceptInviteEffect,
     JoinConversationEffect,
     LeaveConversationEffect,
+    AgentSnapshot,
 )
 from engine.runtime.phases.agent_turn import (
     AgentContext,

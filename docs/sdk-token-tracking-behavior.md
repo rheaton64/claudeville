@@ -123,14 +123,13 @@ The SDK tracks `cache_read_input_tokens` server-side and continues after resume.
 **Key insight:** `input_tokens` and `output_tokens` are per-turn, not cumulative.
 
 **Recommendation:**
-- Just ADD the per-turn values to our cumulative totals
+- ADD the per-turn values to cumulative billing totals
 - No delta computation needed
-- No need to track "previous cumulative" values
 
 ```python
-# Correct approach - add per-turn values directly
-new_session_input = old_session_input + usage['input_tokens']
-new_session_output = old_session_output + usage['output_tokens']
+# Correct approach - add per-turn values to billing totals
+total_input_tokens += usage['input_tokens']
+total_output_tokens += usage['output_tokens']
 ```
 
 ### 3. Cache Token Tracking
@@ -144,10 +143,10 @@ Cache tokens are interesting for cost analysis:
 ### 4. Restart Recovery
 
 After restart, when resuming a session:
-- **Context tracking:** Automatically continues (SDK handles it)
-- **Usage tracking:** We need to restore from persisted state
+- **Context window (`session_tokens`):** Restored automatically on first turn when SDK reports `cache_read_input_tokens`
+- **Billing totals:** Restored from persisted `TokenUsage` in `AgentSnapshot`
 
-Our persisted `TokenUsage` in `AgentSnapshot` should store cumulative per-turn totals, and we restore these on startup.
+The SDK tracks context window size server-side via session, so the first turn after restart will report the correct `cache_read_input_tokens` value.
 
 ---
 
@@ -165,18 +164,16 @@ delta = cumulative_total - previous_cumulative  # This doesn't work!
 
 ### Correct Approach
 
-The per-turn values should be added directly to our tracking:
+Context window size comes directly from the SDK each turn:
 
 ```python
-# CORRECT - add per-turn values directly
-turn_input = usage['input_tokens']
-turn_output = usage['output_tokens']
+# CORRECT - context window is set directly, not accumulated
+context_window_size = usage['cache_read_input_tokens'] + usage['input_tokens']
+session_tokens = context_window_size  # SET, not add
 
-# Add to our cumulative tracking
-session_input_tokens += turn_input
-session_output_tokens += turn_output
-total_input_tokens += turn_input
-total_output_tokens += turn_output
+# Billing totals are accumulated from per-turn values
+total_input_tokens += usage['input_tokens']
+total_output_tokens += usage['output_tokens']
 ```
 
 ### Compaction Threshold

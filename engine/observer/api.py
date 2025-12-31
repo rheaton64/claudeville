@@ -693,12 +693,10 @@ class ObserverAPI:
 
         u = agent.token_usage
         return {
-            "session_tokens": u.session_input_tokens + u.session_output_tokens,
+            "session_tokens": u.session_tokens,
             "total_tokens": u.total_input_tokens + u.total_output_tokens,
             "turn_count": u.turn_count,
             # Breakdown
-            "session_input": u.session_input_tokens,
-            "session_output": u.session_output_tokens,
             "total_input": u.total_input_tokens,
             "total_output": u.total_output_tokens,
             "cache_creation": u.cache_creation_input_tokens,

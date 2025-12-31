@@ -389,14 +389,14 @@ class EventStore:
                 pass
 
             case AgentTokenUsageRecordedEvent():
-                # Update agent's token usage from the cumulative values in the event
+                # Update agent's token usage - session_tokens is context window size
                 if event.agent in agents:
                     agent = agents[event.agent]
                     old_usage = agent.token_usage
-                    # The event contains the per-turn usage; we need to add it to existing
+                    # Context window = cache_read (cumulative) + input (per-turn)
+                    context_window_size = event.cache_read_input_tokens + event.input_tokens
                     new_usage = TokenUsage(
-                        session_input_tokens=old_usage.session_input_tokens + event.input_tokens,
-                        session_output_tokens=old_usage.session_output_tokens + event.output_tokens,
+                        session_tokens=context_window_size,
                         total_input_tokens=old_usage.total_input_tokens + event.input_tokens,
                         total_output_tokens=old_usage.total_output_tokens + event.output_tokens,
                         cache_creation_input_tokens=(
@@ -428,10 +428,8 @@ class EventStore:
                 if event.agent in agents:
                     agent = agents[event.agent]
                     old_usage = agent.token_usage
-                    # Reset session tokens to new value, preserve all-time
                     new_usage = TokenUsage(
-                        session_input_tokens=event.new_session_tokens // 2,
-                        session_output_tokens=event.new_session_tokens - (event.new_session_tokens // 2),
+                        session_tokens=event.new_session_tokens,
                         total_input_tokens=old_usage.total_input_tokens,
                         total_output_tokens=old_usage.total_output_tokens,
                         cache_creation_input_tokens=old_usage.cache_creation_input_tokens,

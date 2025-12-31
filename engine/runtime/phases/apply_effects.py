@@ -196,10 +196,7 @@ class ApplyEffectsPhase(BasePhase):
         agent = ctx.agents.get(effect.agent)
         old_session_tokens = 0
         if agent:
-            old_session_tokens = (
-                agent.token_usage.session_input_tokens +
-                agent.token_usage.session_output_tokens
-            )
+            old_session_tokens = agent.token_usage.session_tokens
 
         # Create events
         events: list[DomainEvent] = []
@@ -1002,10 +999,12 @@ class ApplyEffectsPhase(BasePhase):
 
         old_usage = agent.token_usage
 
-        # Update both session and total tokens
+        # Context window size from SDK (cache_read is cumulative, input is per-turn)
+        context_window_size = effect.cache_read_input_tokens + effect.input_tokens
+
+        # Update context window and cumulative totals
         new_usage = TokenUsage(
-            session_input_tokens=old_usage.session_input_tokens + effect.input_tokens,
-            session_output_tokens=old_usage.session_output_tokens + effect.output_tokens,
+            session_tokens=context_window_size,
             total_input_tokens=old_usage.total_input_tokens + effect.input_tokens,
             total_output_tokens=old_usage.total_output_tokens + effect.output_tokens,
             cache_creation_input_tokens=(
@@ -1033,9 +1032,7 @@ class ApplyEffectsPhase(BasePhase):
             cache_creation_input_tokens=effect.cache_creation_input_tokens,
             cache_read_input_tokens=effect.cache_read_input_tokens,
             model_id=effect.model_id,
-            cumulative_session_tokens=(
-                new_usage.session_input_tokens + new_usage.session_output_tokens
-            ),
+            cumulative_session_tokens=new_usage.session_tokens,
             cumulative_total_tokens=(
                 new_usage.total_input_tokens + new_usage.total_output_tokens
             ),
@@ -1085,15 +1082,11 @@ class ApplyEffectsPhase(BasePhase):
             return [], ctx
 
         old_usage = agent.token_usage
-        old_session_tokens = (
-            old_usage.session_input_tokens + old_usage.session_output_tokens
-        )
 
-        # Reset session tokens to new value (typically post-compaction count)
+        # Reset session tokens to post-compaction context size
         # All-time totals remain unchanged
         new_usage = TokenUsage(
-            session_input_tokens=effect.new_session_tokens // 2,  # Rough split
-            session_output_tokens=effect.new_session_tokens - (effect.new_session_tokens // 2),
+            session_tokens=effect.new_session_tokens,
             total_input_tokens=old_usage.total_input_tokens,
             total_output_tokens=old_usage.total_output_tokens,
             cache_creation_input_tokens=old_usage.cache_creation_input_tokens,
@@ -1110,7 +1103,7 @@ class ApplyEffectsPhase(BasePhase):
             tick=ctx.tick,
             timestamp=ctx.timestamp,
             agent=effect.agent,
-            old_session_tokens=old_session_tokens,
+            old_session_tokens=old_usage.session_tokens,
             new_session_tokens=effect.new_session_tokens,
         )
 

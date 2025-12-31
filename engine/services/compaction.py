@@ -115,21 +115,15 @@ class CompactionService:
             })
 
             # Wait for the response (compaction happens server-side)
-            # Extract the post-compaction token count from ResultMessage
             from claude_agent_sdk import ResultMessage
-            post_tokens = pre_tokens  # Default to pre-tokens if extraction fails
             async for message in client.receive_response():
                 if isinstance(message, ResultMessage):
-                    # Extract token count from the compaction ResultMessage
-                    usage = getattr(message, 'usage', None)
-                    if usage:
-                        input_tokens = usage.get('input_tokens', 0)
-                        output_tokens = usage.get('output_tokens', 0)
-                        post_tokens = input_tokens + output_tokens
+                    # Compaction complete - context window will be populated on next turn
                     break
 
-            # Reset provider's session tracking after compaction
-            # This ensures delta computation works correctly for subsequent turns
+            # Reset to 0 - the next turn will populate with actual context window size
+            # from SDK's cache_read_input_tokens + input_tokens
+            post_tokens = 0
             self._provider.reset_session_after_compaction(agent_name, post_tokens)
 
             logger.info(

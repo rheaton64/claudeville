@@ -6,16 +6,16 @@ from .time import TimePeriod
 class TokenUsage(BaseModel):
     """Cumulative token usage for an agent.
 
-    Tracks both session tokens (reset on compaction, persist across restarts)
-    and all-time totals (never reset). Session tokens are used for compaction
-    threshold decisions.
+    Tracks context window size (for compaction threshold decisions) and
+    all-time totals (for billing/stats, never reset).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    # Session tokens (reset on compaction, persist across restarts)
-    session_input_tokens: int = 0
-    session_output_tokens: int = 0
+    # Context window size - the current size of the agent's context
+    # Set to cache_read_input_tokens + input_tokens from SDK each turn
+    # Used for compaction threshold decisions (100K/150K)
+    session_tokens: int = 0
 
     # All-time cumulative tokens (never reset)
     total_input_tokens: int = 0
