@@ -34,6 +34,9 @@ from engine.domain import (
     Invitation,
     INVITE_EXPIRY_TICKS,
     TimePeriod,
+    TokenUsage,
+    InterpreterUsage,
+    WorldSnapshot,
     Effect,
     DomainEvent,
     # Effects
@@ -57,6 +60,9 @@ from engine.domain import (
     EndConversationEffect,
     ConversationEndingSeenEffect,
     ShouldCompactEffect,
+    RecordAgentTokenUsageEffect,
+    RecordInterpreterTokenUsageEffect,
+    ResetSessionTokensEffect,
     # Events
     AgentMovedEvent,
     AgentMoodChangedEvent,
@@ -80,6 +86,9 @@ from engine.domain import (
     ConversationEndingUnseenEvent,
     ConversationEndingSeenEvent,
     DidCompactEvent,
+    AgentTokenUsageRecordedEvent,
+    InterpreterTokenUsageRecordedEvent,
+    SessionTokensResetEvent,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
@@ -123,9 +132,8 @@ class ApplyEffectsPhase(BasePhase):
 
         for effect in ctx.effects:
             if isinstance(effect, ShouldCompactEffect):
-                event = await self._handle_compaction(effect, ctx)
-                if event:
-                    compaction_events.append(event)
+                events = await self._handle_compaction(effect, new_ctx)
+                compaction_events.extend(events)
 
         if compaction_events:
             new_ctx = new_ctx.with_events(compaction_events)
@@ -136,19 +144,22 @@ class ApplyEffectsPhase(BasePhase):
         self,
         effect: ShouldCompactEffect,
         ctx: TickContext,
-    ) -> DidCompactEvent | None:
+    ) -> list[DomainEvent]:
         """
         Handle ShouldCompactEffect - decide whether to compact and execute.
 
         Decision logic:
         - critical=True (>= 150K tokens): Always compact
         - critical=False (100K-150K tokens): Only compact if agent is going to sleep
+
+        Returns:
+            List of events (DidCompactEvent and SessionTokensResetEvent) or empty list
         """
         if not self._compaction_service:
             logger.warning(
                 f"ShouldCompactEffect for {effect.agent} but no compaction service"
             )
-            return None
+            return []
 
         should_compact = False
 
@@ -174,22 +185,40 @@ class ApplyEffectsPhase(BasePhase):
             )
 
         if not should_compact:
-            return None
+            return []
 
         # Execute compaction
         post_tokens = await self._compaction_service.execute_compact(
             effect.agent, effect.critical
         )
 
-        # Create event
-        return DidCompactEvent(
+        # Get agent's old session tokens for the reset event
+        agent = ctx.agents.get(effect.agent)
+        old_session_tokens = 0
+        if agent:
+            old_session_tokens = agent.token_usage.session_tokens
+
+        # Create events
+        events: list[DomainEvent] = []
+
+        events.append(DidCompactEvent(
             tick=ctx.tick,
             timestamp=ctx.timestamp,
             agent=effect.agent,
             pre_tokens=effect.pre_tokens,
             post_tokens=post_tokens,
             critical=effect.critical,
-        )
+        ))
+
+        events.append(SessionTokensResetEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            agent=effect.agent,
+            old_session_tokens=old_session_tokens,
+            new_session_tokens=post_tokens,
+        ))
+
+        return events
 
     def execute_sync(self, ctx: TickContext) -> TickContext:
         """
@@ -260,6 +289,12 @@ class ApplyEffectsPhase(BasePhase):
             case ShouldCompactEffect():
                 # Handled asynchronously in _execute, skip here
                 return [], ctx
+            case RecordAgentTokenUsageEffect():
+                return self._apply_agent_token_usage(effect, ctx)
+            case RecordInterpreterTokenUsageEffect():
+                return self._apply_interpreter_token_usage(effect, ctx)
+            case ResetSessionTokensEffect():
+                return self._apply_reset_session_tokens(effect, ctx)
             case _:
                 logger.warning(f"Unknown effect type: {type(effect)}")
                 return [], ctx
@@ -947,3 +982,129 @@ class ApplyEffectsPhase(BasePhase):
             logger.debug(f"Expired {len(events)} invites")
 
         return events, new_ctx
+
+    # =========================================================================
+    # Token usage effects
+    # =========================================================================
+
+    def _apply_agent_token_usage(
+        self,
+        effect: RecordAgentTokenUsageEffect,
+        ctx: TickContext,
+    ) -> tuple[list[DomainEvent], TickContext]:
+        """Record token usage from an agent turn."""
+        agent = ctx.agents.get(effect.agent)
+        if not agent:
+            return [], ctx
+
+        old_usage = agent.token_usage
+
+        # Context window size from SDK (cache_read is cumulative, input is per-turn)
+        context_window_size = effect.cache_read_input_tokens + effect.input_tokens
+
+        # Update context window and cumulative totals
+        new_usage = TokenUsage(
+            session_tokens=context_window_size,
+            total_input_tokens=old_usage.total_input_tokens + effect.input_tokens,
+            total_output_tokens=old_usage.total_output_tokens + effect.output_tokens,
+            cache_creation_input_tokens=(
+                old_usage.cache_creation_input_tokens +
+                effect.cache_creation_input_tokens
+            ),
+            cache_read_input_tokens=(
+                old_usage.cache_read_input_tokens +
+                effect.cache_read_input_tokens
+            ),
+            turn_count=old_usage.turn_count + 1,
+        )
+
+        new_agent = AgentSnapshot(**{
+            **agent.model_dump(),
+            "token_usage": new_usage,
+        })
+
+        event = AgentTokenUsageRecordedEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            agent=effect.agent,
+            input_tokens=effect.input_tokens,
+            output_tokens=effect.output_tokens,
+            cache_creation_input_tokens=effect.cache_creation_input_tokens,
+            cache_read_input_tokens=effect.cache_read_input_tokens,
+            model_id=effect.model_id,
+            cumulative_session_tokens=new_usage.session_tokens,
+            cumulative_total_tokens=(
+                new_usage.total_input_tokens + new_usage.total_output_tokens
+            ),
+        )
+
+        return [event], ctx.with_updated_agent(new_agent)
+
+    def _apply_interpreter_token_usage(
+        self,
+        effect: RecordInterpreterTokenUsageEffect,
+        ctx: TickContext,
+    ) -> tuple[list[DomainEvent], TickContext]:
+        """Record token usage from interpreter call (system overhead)."""
+        old_usage = ctx.world.interpreter_usage
+
+        new_usage = InterpreterUsage(
+            total_input_tokens=old_usage.total_input_tokens + effect.input_tokens,
+            total_output_tokens=old_usage.total_output_tokens + effect.output_tokens,
+            call_count=old_usage.call_count + 1,
+        )
+
+        new_world = WorldSnapshot(**{
+            **ctx.world.model_dump(),
+            "interpreter_usage": new_usage,
+        })
+
+        event = InterpreterTokenUsageRecordedEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            input_tokens=effect.input_tokens,
+            output_tokens=effect.output_tokens,
+            cumulative_total_tokens=(
+                new_usage.total_input_tokens + new_usage.total_output_tokens
+            ),
+        )
+
+        return [event], ctx.with_updated_world(new_world)
+
+    def _apply_reset_session_tokens(
+        self,
+        effect: ResetSessionTokensEffect,
+        ctx: TickContext,
+    ) -> tuple[list[DomainEvent], TickContext]:
+        """Reset session tokens after compaction."""
+        agent = ctx.agents.get(effect.agent)
+        if not agent:
+            return [], ctx
+
+        old_usage = agent.token_usage
+
+        # Reset session tokens to post-compaction context size
+        # All-time totals remain unchanged
+        new_usage = TokenUsage(
+            session_tokens=effect.new_session_tokens,
+            total_input_tokens=old_usage.total_input_tokens,
+            total_output_tokens=old_usage.total_output_tokens,
+            cache_creation_input_tokens=old_usage.cache_creation_input_tokens,
+            cache_read_input_tokens=old_usage.cache_read_input_tokens,
+            turn_count=old_usage.turn_count,
+        )
+
+        new_agent = AgentSnapshot(**{
+            **agent.model_dump(),
+            "token_usage": new_usage,
+        })
+
+        event = SessionTokensResetEvent(
+            tick=ctx.tick,
+            timestamp=ctx.timestamp,
+            agent=effect.agent,
+            old_session_tokens=old_usage.session_tokens,
+            new_session_tokens=effect.new_session_tokens,
+        )
+
+        return [event], ctx.with_updated_agent(new_agent)

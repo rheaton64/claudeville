@@ -40,6 +40,7 @@ from engine.domain import (
     WeatherChangedEvent,
     UpdateLastActiveTickEffect,
     ShouldCompactEffect,
+    RecordAgentTokenUsageEffect,
     AgentMovedEvent,
 )
 from engine.runtime.context import TickContext
@@ -449,12 +450,24 @@ register_conversation_tool(
 
 
 @dataclass
+class TurnTokenUsage:
+    """Token usage from a single LLM call."""
+
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    model_id: str = ""
+
+
+@dataclass
 class TurnResult:
     """Result from LLM provider for an agent's turn."""
 
     narrative: str
     effects: list[Effect]  # Already processed by tool handlers
     narrative_with_tools: str = ""  # Narrative with tool calls interleaved
+    token_usage: TurnTokenUsage | None = None  # Token usage from this turn
 
 
 @runtime_checkable
@@ -579,6 +592,17 @@ class AgentTurnPhase(BasePhase):
             if agent_location:
                 new_ctx = new_ctx.with_effect(UpdateLastActiveTickEffect(agent=agent_name, location=agent_location))
             new_ctx = new_ctx.with_agent_acted(agent_name)
+
+            # Emit token usage effect if we have usage data
+            if turn_result.token_usage:
+                new_ctx = new_ctx.with_effect(RecordAgentTokenUsageEffect(
+                    agent=agent_name,
+                    input_tokens=turn_result.token_usage.input_tokens,
+                    output_tokens=turn_result.token_usage.output_tokens,
+                    cache_creation_input_tokens=turn_result.token_usage.cache_creation_input_tokens,
+                    cache_read_input_tokens=turn_result.token_usage.cache_read_input_tokens,
+                    model_id=turn_result.token_usage.model_id,
+                ))
 
             # Mark unseen conversation endings as seen
             unseen_endings = ctx.unseen_endings.get(agent_name, [])

@@ -320,6 +320,11 @@ class VillageEngine:
         if include_scheduler and snapshot.scheduler_state is not None:
             self.scheduler.load_state(snapshot.scheduler_state)
 
+        # Restore token counts to provider from persisted agent snapshots
+        # This ensures compaction threshold decisions are correct after restart
+        if self._llm_provider is not None and hasattr(self._llm_provider, "restore_token_counts"):
+            self._llm_provider.restore_token_counts(self._agents)
+
         logger.debug(
             f"Hydrated state | tick={self._tick} | "
             f"agents={len(self._agents)} | "

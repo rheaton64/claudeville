@@ -191,6 +191,56 @@ class ShouldCompactEffect(BaseModel):
     critical: bool  # True = 150K threshold (critical), False = 100K pre-sleep (opportunistic)
 
 
+# --- Token Usage Effects ---
+
+
+class RecordAgentTokenUsageEffect(BaseModel):
+    """Record token usage from an agent turn.
+
+    Emitted by AgentTurnPhase after each LLM call. Updates both
+    session tokens (for compaction) and all-time totals.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["record_agent_token_usage"] = "record_agent_token_usage"
+
+    agent: AgentName
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    model_id: str
+
+
+class RecordInterpreterTokenUsageEffect(BaseModel):
+    """Record token usage from interpreter call (system overhead).
+
+    Emitted by InterpretPhase. Tracked separately from agent tokens
+    since these are infrastructure costs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["record_interpreter_token_usage"] = "record_interpreter_token_usage"
+
+    input_tokens: int
+    output_tokens: int
+
+
+class ResetSessionTokensEffect(BaseModel):
+    """Reset session tokens after compaction.
+
+    Emitted by CompactionService after successful compaction. Sets
+    session tokens to the post-compaction value while preserving
+    all-time totals.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["reset_session_tokens"] = "reset_session_tokens"
+
+    agent: AgentName
+    new_session_tokens: int  # Post-compaction token count from SDK
+
+
 Effect = Annotated[
     Union[
         MoveAgentEffect,
@@ -213,6 +263,9 @@ Effect = Annotated[
         EndConversationEffect,
         ConversationEndingSeenEffect,
         ShouldCompactEffect,
+        RecordAgentTokenUsageEffect,
+        RecordInterpreterTokenUsageEffect,
+        ResetSessionTokensEffect,
     ],
     Discriminator("type"),
 ]

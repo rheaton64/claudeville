@@ -118,12 +118,13 @@ class CompactionService:
             from claude_agent_sdk import ResultMessage
             async for message in client.receive_response():
                 if isinstance(message, ResultMessage):
-                    # Compaction complete, token count will be updated
-                    # in the provider's ResultMessage handler
+                    # Compaction complete - context window will be populated on next turn
                     break
 
-            # Get post-compaction token count
-            post_tokens = self.get_token_count(agent_name)
+            # Reset to 0 - the next turn will populate with actual context window size
+            # from SDK's cache_read_input_tokens + input_tokens
+            post_tokens = 0
+            self._provider.reset_session_after_compaction(agent_name, post_tokens)
 
             logger.info(
                 f"COMPACTION_COMPLETE | {agent_name} | "
