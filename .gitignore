@@ -12,3 +12,4 @@ wheels/
 .claude/
 .pytest_cache/
 village/
+.branchlet.json
