@@ -52,6 +52,7 @@ from engine.runtime.phases.agent_turn import (
     AgentContext,
     ToolContext,
     TurnResult,
+    TurnTokenUsage,
     ConversationTool,
     CONVERSATION_TOOL_REGISTRY,
 )
@@ -327,7 +328,10 @@ class ClaudeProvider:
         self._agent_states: dict[AgentName, AgentToolState] = {}
         self._prompt_builder = PromptBuilder()
         self._tracer = tracer
-        self._token_counts: dict[AgentName, int] = {}  # Cumulative tokens per agent
+        # Context window size for compaction threshold
+        # Uses cache_read_input_tokens + input_tokens from SDK usage
+        # SDK tracks this server-side and persists across session resumes
+        self._token_counts: dict[AgentName, int] = {}
 
     async def execute_turn(
         self,
@@ -491,6 +495,7 @@ class ClaudeProvider:
         cost_usd: float | None = None
         num_turns: int = 0
         tool_calls_count: int = 0
+        turn_token_usage: TurnTokenUsage | None = None
 
         async for message in client.receive_response():
             message_count += 1
@@ -584,20 +589,45 @@ class ClaudeProvider:
                 cost_usd = getattr(message, 'total_cost_usd', None)
                 num_turns = getattr(message, 'num_turns', 0)
 
-                # Extract cumulative token usage for compaction tracking
+                # Extract token usage from SDK
+                # See docs/sdk-token-tracking-behavior.md for detailed analysis
                 usage = getattr(message, 'usage', None)
                 if usage:
+                    # Per-turn tokens (for billing/usage tracking)
+                    # These are fresh values each turn, NOT cumulative
                     input_tokens = usage.get('input_tokens', 0)
                     output_tokens = usage.get('output_tokens', 0)
-                    total_tokens = input_tokens + output_tokens
-                    self._token_counts[agent_name] = total_tokens
-                    logger.debug(f"[{agent_name}] Cumulative tokens: {total_tokens}")
+                    cache_creation = usage.get('cache_creation_input_tokens', 0)
+                    cache_read = usage.get('cache_read_input_tokens', 0)
+
+                    # Context window size (for compaction threshold)
+                    # cache_read_input_tokens IS cumulative and represents total context
+                    # SDK tracks this server-side and persists across session resumes
+                    context_window_size = cache_read + input_tokens
+                    self._token_counts[agent_name] = context_window_size
+
+                    logger.debug(
+                        f"[{agent_name}] Context window: {context_window_size} | "
+                        f"Per-turn: in={input_tokens}, out={output_tokens}, "
+                        f"cache_read={cache_read}, cache_create={cache_creation}"
+                    )
+
+                    # Create token usage for this turn
+                    # These are per-turn values that get ADDED to cumulative totals
+                    # by the effect/event system
+                    turn_token_usage = TurnTokenUsage(
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_input_tokens=cache_creation,
+                        cache_read_input_tokens=cache_read,
+                        model_id=model_id,
+                    )
 
                     # Emit token update event for TUI display
                     if self._tracer:
                         from engine.services import CRITICAL_THRESHOLD
                         self._tracer.log_token_update(
-                            str(agent_name), total_tokens, CRITICAL_THRESHOLD
+                            str(agent_name), context_window_size, CRITICAL_THRESHOLD
                         )
 
                 # Update LangSmith metadata with SDK metrics
@@ -658,6 +688,7 @@ class ClaudeProvider:
             narrative=narrative,
             effects=list(effects),
             narrative_with_tools=narrative_with_tools,
+            token_usage=turn_token_usage,
         )
 
     async def _get_or_create_client(
@@ -742,3 +773,39 @@ class ClaudeProvider:
         This is the SDK's cumulative usage tracking.
         """
         return self._token_counts.get(agent_name, 0)
+
+    def restore_token_counts(self, agents: dict[AgentName, "AgentSnapshot"]) -> None:
+        """Called on startup - but context window tracking is handled by SDK.
+
+        The SDK tracks context window size (cache_read_input_tokens) server-side
+        and this persists across session resumes. The first turn after restart
+        will automatically report the correct context window size.
+
+        This method is kept for compatibility but doesn't need to do much.
+        The actual context window size will be populated on the first turn.
+
+        Args:
+            agents: Dictionary of agent snapshots (unused for compaction)
+        """
+        # Context window tracking is handled by SDK server-side via session resume
+        # The first turn will populate _token_counts with the correct value
+        # We just log for visibility
+        for name in agents:
+            logger.info(f"Agent {name} ready - context window will be tracked by SDK")
+
+    def reset_session_after_compaction(
+        self, agent_name: AgentName, post_compaction_tokens: int
+    ) -> None:
+        """Update local tracking after compaction.
+
+        After compaction, the SDK's context window shrinks. We update our local
+        tracking to reflect the new post-compaction context size.
+
+        Args:
+            agent_name: Which agent was compacted
+            post_compaction_tokens: New context window size after compaction
+        """
+        self._token_counts[agent_name] = post_compaction_tokens
+        logger.info(
+            f"Updated context window for {agent_name} after compaction: {post_compaction_tokens}"
+        )

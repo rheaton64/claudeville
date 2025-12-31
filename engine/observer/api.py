@@ -674,6 +674,103 @@ class ObserverAPI:
             "saved": pre_tokens - post_tokens,
         }
 
+    # --- Token Usage Queries ---
+
+    def get_agent_token_usage(self, agent_name: AgentName) -> dict | None:
+        """
+        Get cumulative token usage for an agent.
+
+        Args:
+            agent_name: Which agent to query
+
+        Returns:
+            Dict with token usage breakdown, or None if agent not found.
+            Includes session tokens (reset on compaction) and all-time totals.
+        """
+        agent = self._engine.agents.get(agent_name)
+        if not agent:
+            return None
+
+        u = agent.token_usage
+        return {
+            "session_tokens": u.session_input_tokens + u.session_output_tokens,
+            "total_tokens": u.total_input_tokens + u.total_output_tokens,
+            "turn_count": u.turn_count,
+            # Breakdown
+            "session_input": u.session_input_tokens,
+            "session_output": u.session_output_tokens,
+            "total_input": u.total_input_tokens,
+            "total_output": u.total_output_tokens,
+            "cache_creation": u.cache_creation_input_tokens,
+            "cache_read": u.cache_read_input_tokens,
+        }
+
+    def get_all_agent_token_usage(self) -> dict[str, dict]:
+        """
+        Get token usage for all agents.
+
+        Returns:
+            Dict mapping agent names to token usage dicts
+        """
+        result = {}
+        for name in self._engine.agents:
+            usage = self.get_agent_token_usage(name)
+            if usage:
+                result[str(name)] = usage
+        return result
+
+    def get_interpreter_usage(self) -> dict:
+        """
+        Get interpreter (Haiku) token usage - system overhead.
+
+        Returns:
+            Dict with total input/output tokens and call count
+        """
+        u = self._engine.world.interpreter_usage
+        return {
+            "total_tokens": u.total_input_tokens + u.total_output_tokens,
+            "total_input": u.total_input_tokens,
+            "total_output": u.total_output_tokens,
+            "call_count": u.call_count,
+        }
+
+    def get_total_token_usage(self) -> dict:
+        """
+        Get combined token usage across all agents and interpreter.
+
+        Returns:
+            Dict with village-wide token totals
+        """
+        total_input = 0
+        total_output = 0
+        total_cache_creation = 0
+        total_cache_read = 0
+        total_turn_count = 0
+
+        for agent in self._engine.agents.values():
+            u = agent.token_usage
+            total_input += u.total_input_tokens
+            total_output += u.total_output_tokens
+            total_cache_creation += u.cache_creation_input_tokens
+            total_cache_read += u.cache_read_input_tokens
+            total_turn_count += u.turn_count
+
+        # Add interpreter usage
+        interp = self._engine.world.interpreter_usage
+        interpreter_total = interp.total_input_tokens + interp.total_output_tokens
+
+        return {
+            "agent_input_tokens": total_input,
+            "agent_output_tokens": total_output,
+            "agent_total_tokens": total_input + total_output,
+            "agent_turn_count": total_turn_count,
+            "cache_creation_tokens": total_cache_creation,
+            "cache_read_tokens": total_cache_read,
+            "interpreter_total_tokens": interpreter_total,
+            "interpreter_call_count": interp.call_count,
+            "grand_total_tokens": total_input + total_output + interpreter_total,
+        }
+
     # =========================================================================
     # Internal Helpers
     # =========================================================================

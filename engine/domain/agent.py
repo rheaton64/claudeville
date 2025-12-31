@@ -1,6 +1,33 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from .types import AgentName, LocationId
 from .time import TimePeriod
+
+
+class TokenUsage(BaseModel):
+    """Cumulative token usage for an agent.
+
+    Tracks both session tokens (reset on compaction, persist across restarts)
+    and all-time totals (never reset). Session tokens are used for compaction
+    threshold decisions.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # Session tokens (reset on compaction, persist across restarts)
+    session_input_tokens: int = 0
+    session_output_tokens: int = 0
+
+    # All-time cumulative tokens (never reset)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+
+    # Cache tokens (all-time only)
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+    # Turn counter (for averages)
+    turn_count: int = 0
+
 
 class AgentLLMModel(BaseModel):
     """The model of an agent's LLM."""
@@ -39,4 +66,7 @@ class AgentSnapshot(BaseModel):
 
     # Turn tracking
     last_active_tick: int = 0
-    
+
+    # Token usage tracking
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
+

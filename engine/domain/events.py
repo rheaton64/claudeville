@@ -305,6 +305,66 @@ class DidCompactEvent(BaseModel):
     critical: bool  # True = was critical (>= 150K), False = was opportunistic pre-sleep
 
 
+# --- Token Usage Events ---
+
+
+class AgentTokenUsageRecordedEvent(BaseModel):
+    """Historical record of agent token usage from a single turn.
+
+    Emitted by ApplyEffectsPhase after recording token usage from an agent turn.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["agent_token_usage_recorded"] = "agent_token_usage_recorded"
+    tick: int
+    timestamp: datetime
+
+    agent: AgentName
+
+    # Per-turn usage
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    model_id: str
+
+    # Cumulative at time of event (for querying)
+    cumulative_session_tokens: int
+    cumulative_total_tokens: int
+
+
+class InterpreterTokenUsageRecordedEvent(BaseModel):
+    """Historical record of interpreter token usage.
+
+    Emitted by ApplyEffectsPhase after recording interpreter (Haiku) usage.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["interpreter_token_usage_recorded"] = "interpreter_token_usage_recorded"
+    tick: int
+    timestamp: datetime
+
+    input_tokens: int
+    output_tokens: int
+    cumulative_total_tokens: int
+
+
+class SessionTokensResetEvent(BaseModel):
+    """Record of session token reset after compaction.
+
+    Emitted by ApplyEffectsPhase after session tokens are reset following compaction.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["session_tokens_reset"] = "session_tokens_reset"
+    tick: int
+    timestamp: datetime
+
+    agent: AgentName
+    old_session_tokens: int
+    new_session_tokens: int
+
+
 # --- The discriminated union ---
 
 DomainEvent = Annotated[
@@ -334,6 +394,9 @@ DomainEvent = Annotated[
         WeatherChangedEvent,
         NightSkippedEvent,
         DidCompactEvent,
+        AgentTokenUsageRecordedEvent,
+        InterpreterTokenUsageRecordedEvent,
+        SessionTokensResetEvent,
     ],
     Discriminator("type"),
 ]

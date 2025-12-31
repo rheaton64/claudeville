@@ -12,6 +12,8 @@ from engine.domain import (
     Conversation,
     Invitation,
     UnseenConversationEnding,
+    TokenUsage,
+    InterpreterUsage,
     INVITE_EXPIRY_TICKS,
     # Event types for replay
     AgentMovedEvent,
@@ -37,6 +39,9 @@ from engine.domain import (
     WeatherChangedEvent,
     NightSkippedEvent,
     DidCompactEvent,
+    AgentTokenUsageRecordedEvent,
+    InterpreterTokenUsageRecordedEvent,
+    SessionTokensResetEvent,
 )
 from .snapshot_store import SnapshotStore, VillageSnapshot
 from .archive import EventArchive
@@ -193,6 +198,7 @@ class EventStore:
                 weather=world.weather,
                 locations=world.locations,
                 agent_locations=world.agent_locations,
+                interpreter_usage=world.interpreter_usage,
             )
 
         time_snapshot = TimeSnapshot(
@@ -381,6 +387,60 @@ class EventStore:
                 # Compaction events are recorded for history but don't update snapshot state
                 # Token counts are tracked in ClaudeProvider, not in snapshots
                 pass
+
+            case AgentTokenUsageRecordedEvent():
+                # Update agent's token usage from the cumulative values in the event
+                if event.agent in agents:
+                    agent = agents[event.agent]
+                    old_usage = agent.token_usage
+                    # The event contains the per-turn usage; we need to add it to existing
+                    new_usage = TokenUsage(
+                        session_input_tokens=old_usage.session_input_tokens + event.input_tokens,
+                        session_output_tokens=old_usage.session_output_tokens + event.output_tokens,
+                        total_input_tokens=old_usage.total_input_tokens + event.input_tokens,
+                        total_output_tokens=old_usage.total_output_tokens + event.output_tokens,
+                        cache_creation_input_tokens=(
+                            old_usage.cache_creation_input_tokens +
+                            event.cache_creation_input_tokens
+                        ),
+                        cache_read_input_tokens=(
+                            old_usage.cache_read_input_tokens +
+                            event.cache_read_input_tokens
+                        ),
+                        turn_count=old_usage.turn_count + 1,
+                    )
+                    agents[event.agent] = AgentSnapshot(
+                        **{**agent.model_dump(), "token_usage": new_usage}
+                    )
+
+            case InterpreterTokenUsageRecordedEvent():
+                # Update world's interpreter usage
+                old_usage = world.interpreter_usage
+                new_usage = InterpreterUsage(
+                    total_input_tokens=old_usage.total_input_tokens + event.input_tokens,
+                    total_output_tokens=old_usage.total_output_tokens + event.output_tokens,
+                    call_count=old_usage.call_count + 1,
+                )
+                world = WorldSnapshot(**{**world.model_dump(), "interpreter_usage": new_usage})
+
+            case SessionTokensResetEvent():
+                # Reset session tokens after compaction (all-time stays the same)
+                if event.agent in agents:
+                    agent = agents[event.agent]
+                    old_usage = agent.token_usage
+                    # Reset session tokens to new value, preserve all-time
+                    new_usage = TokenUsage(
+                        session_input_tokens=event.new_session_tokens // 2,
+                        session_output_tokens=event.new_session_tokens - (event.new_session_tokens // 2),
+                        total_input_tokens=old_usage.total_input_tokens,
+                        total_output_tokens=old_usage.total_output_tokens,
+                        cache_creation_input_tokens=old_usage.cache_creation_input_tokens,
+                        cache_read_input_tokens=old_usage.cache_read_input_tokens,
+                        turn_count=old_usage.turn_count,
+                    )
+                    agents[event.agent] = AgentSnapshot(
+                        **{**agent.model_dump(), "token_usage": new_usage}
+                    )
 
         # Update scheduler_state with last_location_speaker (rebuilt from events)
         if snapshot.scheduler_state:

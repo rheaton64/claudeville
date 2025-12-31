@@ -59,6 +59,14 @@ class InterpreterError:
     exception: Exception | None = None
 
 
+@dataclass
+class InterpreterTokenUsage:
+    """Token usage from an interpreter call."""
+
+    input_tokens: int
+    output_tokens: int
+
+
 # =============================================================================
 # Interpreter Class
 # =============================================================================
@@ -115,15 +123,21 @@ class NarrativeInterpreter:
             f"present={present_agents}"
         )
 
-    async def interpret(self, narrative: str) -> AgentTurnResult:
+    async def interpret(
+        self, narrative: str
+    ) -> tuple[AgentTurnResult, InterpreterTokenUsage | None]:
         """
         Interpret a narrative response using Claude with tools.
 
-        Returns AgentTurnResult populated by tool calls.
-        Sets self.last_error if interpretation fails.
+        Returns:
+            Tuple of (AgentTurnResult, InterpreterTokenUsage | None).
+            AgentTurnResult is populated by tool calls.
+            InterpreterTokenUsage contains the token usage from this call.
+            Sets self.last_error if interpretation fails.
         """
         result = MutableTurnResult(narrative=narrative)
         self.last_error = None
+        token_usage: InterpreterTokenUsage | None = None
 
         context_prompt = self._build_context_prompt(narrative)
 
@@ -135,6 +149,13 @@ class NarrativeInterpreter:
                 tools=get_interpreter_tools(),
                 messages=[{"role": "user", "content": context_prompt}],
             )
+
+            # Extract token usage from response
+            if hasattr(response, 'usage') and response.usage:
+                token_usage = InterpreterTokenUsage(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                )
 
             tools_called = []
 
@@ -160,7 +181,7 @@ class NarrativeInterpreter:
                 exception=e,
             )
 
-        return result.to_result()
+        return result.to_result(), token_usage
 
     def _build_context_prompt(self, narrative: str) -> str:
         """Build the context prompt for the interpreter."""
@@ -238,6 +259,7 @@ __all__ = [
     "AgentTurnResult",
     "MutableTurnResult",
     "InterpreterError",
+    "InterpreterTokenUsage",
     "InterpreterContext",
     "OBSERVATION_REGISTRY",
     "get_interpreter_tools",

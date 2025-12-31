@@ -22,10 +22,11 @@ from engine.domain import (
     AddConversationTurnEffect,
     SetNextSpeakerEffect,
     LeaveConversationEffect,
+    RecordInterpreterTokenUsageEffect,
 )
 from engine.runtime.context import TickContext
 from engine.runtime.pipeline import BasePhase
-from engine.runtime.interpreter import NarrativeInterpreter, AgentTurnResult
+from engine.runtime.interpreter import NarrativeInterpreter, AgentTurnResult, InterpreterTokenUsage
 
 from typing import TYPE_CHECKING
 
@@ -91,11 +92,18 @@ class InterpretPhase(BasePhase):
                 logger.error(f"Interpretation failed for {agent_name}: {result}")
                 continue
 
-            interpreted_result, effects = result
+            interpreted_result, effects, token_usage = result
 
             # Update turn result with interpreted data
             new_ctx = new_ctx.with_turn_result(agent_name, interpreted_result)
             new_ctx = new_ctx.with_effects(effects)
+
+            # Emit interpreter token usage effect (system overhead)
+            if token_usage:
+                new_ctx = new_ctx.with_effect(RecordInterpreterTokenUsageEffect(
+                    input_tokens=token_usage.input_tokens,
+                    output_tokens=token_usage.output_tokens,
+                ))
 
             # Emit interpret_complete event for TUI streaming
             if self._tracer:
@@ -112,12 +120,12 @@ class InterpretPhase(BasePhase):
         narrative: str,
         narrative_with_tools: str,
         ctx: TickContext,
-    ) -> tuple[AgentTurnResult, list[Effect]]:
+    ) -> tuple[AgentTurnResult, list[Effect], InterpreterTokenUsage | None]:
         """
         Interpret a single turn.
 
         Returns:
-            (interpreted_result, effects) tuple
+            (interpreted_result, effects, token_usage) tuple
         """
         agent = ctx.agents[agent_name]
 
@@ -141,7 +149,7 @@ class InterpretPhase(BasePhase):
         )
 
         # Run interpretation
-        result = await interpreter.interpret(narrative)
+        result, token_usage = await interpreter.interpret(narrative)
 
         # Log any interpreter errors (but don't fail)
         if interpreter.has_error():
@@ -155,7 +163,7 @@ class InterpretPhase(BasePhase):
             agent_name, result, narrative_with_tools, ctx
         )
 
-        return result, effects
+        return result, effects, token_usage
 
     def _observations_to_effects(
         self,

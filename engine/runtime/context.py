@@ -127,6 +127,10 @@ class TickContext(BaseModel):
         new_invites = {**self.pending_invites, invite.invitee: invite}
         return self.model_copy(update={"pending_invites": new_invites})
 
+    def with_updated_world(self, world: WorldSnapshot) -> "TickContext":
+        """Update the world snapshot in the context."""
+        return self.model_copy(update={"world": world})
+
     # ==========================================================================
     # Query helpers
     # ==========================================================================
