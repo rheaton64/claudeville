@@ -167,6 +167,8 @@ Agents have explicit conversation tools:
 
 Note: Agents never see conversation IDs - tools use agent names or no input.
 
+**Why tools for conversations but narrative for movement?** Conversations require mutual consent—both parties must agree they're in a shared social space. Confusion about conversation state (Am I talking to them? Can they hear me? Is this private?) affects *both* agents and can violate social trust. Tools make consent structural. Movement is unilateral—no one else needs to agree when I walk somewhere—so narrative expression is preserved and the interpreter extracts state changes afterward.
+
 ### Per-Agent Models
 
 Each agent has their own Claude model defined in `bootstrap.py`:
