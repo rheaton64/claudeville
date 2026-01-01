@@ -239,8 +239,15 @@ def build_initial_snapshot(
     ensure_description_files(root, location_descriptions)
 
     agent_snapshots = build_agent_snapshots(agents)
+    # Local import to avoid circular dependency (services -> adapters -> services)
+    from engine.adapters.prompt_builder import PromptBuilder
+    prompt_builder = PromptBuilder()
     for agent in agent_snapshots.values():
-        ensure_agent_directory(agent.name, root)
+        agent_dir = ensure_agent_directory(agent.name, root)
+        # Generate foundations.md for each agent
+        foundations_path = agent_dir / "foundations.md"
+        foundations_content = prompt_builder.build_foundations_content(agent)
+        foundations_path.write_text(foundations_content)
 
     world = build_world_snapshot(start_time=start_time, locations=locations)
     world = WorldSnapshot(

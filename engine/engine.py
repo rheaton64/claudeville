@@ -280,8 +280,37 @@ class VillageEngine:
             return False
 
         self._hydrate_from_snapshot(snapshot)
+        self._refresh_foundations_if_needed()
         logger.info(f"Recovered at tick {self._tick}")
         return True
+
+    def _refresh_foundations_if_needed(self) -> None:
+        """
+        Check and refresh foundations.md files if they're out of date.
+
+        This ensures prompt changes are propagated to the files agents can read.
+        """
+        from engine.adapters.prompt_builder import PromptBuilder
+
+        prompt_builder = PromptBuilder()
+        agents_dir = self.village_root / "agents"
+
+        for agent in self._agents.values():
+            agent_dir = agents_dir / agent.name.lower()
+            foundations_path = agent_dir / "foundations.md"
+
+            expected_content = prompt_builder.build_foundations_content(agent)
+
+            # Check if file exists and matches
+            if foundations_path.exists():
+                current_content = foundations_path.read_text()
+                if current_content == expected_content:
+                    continue  # Already up to date
+
+            # Create or update the file
+            agent_dir.mkdir(parents=True, exist_ok=True)
+            foundations_path.write_text(expected_content)
+            logger.info(f"Refreshed foundations.md for {agent.name}")
 
     def _hydrate_from_snapshot(
         self,

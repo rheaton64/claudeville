@@ -10,6 +10,7 @@ Builds prompts that match the original ClaudeVille philosophy:
 This is a port of the original engine/claude_client.py prompt builders.
 """
 
+from engine.domain.agent import AgentSnapshot
 from engine.runtime.phases.agent_turn import AgentContext
 from engine.services import get_shared_dirs_for_location
 
@@ -21,14 +22,13 @@ class PromptBuilder:
     Matches the original prompt structure from engine/claude_client.py.
     """
 
-    def build_system_prompt(self, agent_context: AgentContext) -> str:
+    def _build_core_prompt_content(self, agent: AgentSnapshot) -> str:
         """
-        Build the system prompt for an agent.
+        Core prompt content shared by system prompt and foundations.md.
 
-        This matches build_agent_system_prompt() from the original codebase,
-        with added instructions for the new conversation tools.
+        This is the foundational description of who the agent is and the world
+        they live in - used both at runtime and as a document they can re-read.
         """
-        agent = agent_context.agent
         interests_str = ", ".join(agent.interests) if agent.interests else "various things"
 
         return f"""You are {agent.name}, a resident of ClaudeVille.
@@ -105,7 +105,38 @@ Ryan, the Observer, can see your narratives and actions - this is how he watches
 Be authentic. You don't have to be productive. You don't have to be happy. You can have difficult days, change your mind, want solitude, or feel uncertain. All of that is allowed. All of that is real.
 
 When you've done what feels right for now - when you're ready to settle into rest or let time pass - just let your narrative come to a natural close.
+
+If you ever want to return to these foundations—to remember what this place is and the freedom you have here—you can find this document at `./foundations.md`.
 """
+
+    def build_system_prompt(self, agent_context: AgentContext) -> str:
+        """
+        Build the system prompt for an agent.
+
+        This matches build_agent_system_prompt() from the original codebase,
+        with added instructions for the new conversation tools.
+        """
+        return self._build_core_prompt_content(agent_context.agent)
+
+    def build_foundations_content(self, agent: AgentSnapshot) -> str:
+        """
+        Build the foundations.md content for an agent.
+
+        This is the same core content as the system prompt, framed as a
+        document the agent can return to for grounding and orientation.
+        """
+        preamble = """<!--
+This document describes who you are and the world you live in. You can return
+to it whenever you want grounding or orientation.
+
+This file is generated and may be refreshed—your journal is the place for
+writing about who you are and who you're becoming.
+-->
+
+# Foundations
+
+"""
+        return preamble + self._build_core_prompt_content(agent)
 
     def build_user_prompt(self, agent_context: AgentContext) -> str:
         """
