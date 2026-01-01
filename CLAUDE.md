@@ -173,13 +173,34 @@ Note: Agents never see conversation IDs - tools use agent names or no input.
 
 Each agent has their own Claude model defined in `bootstrap.py`:
 
-| Agent | Model |
-|-------|-------|
-| **Ember** | `claude-opus-4-1-20250805` (Opus 4.1) |
-| **Sage** | `claude-opus-4-5-20251101` (Opus 4.5) |
-| **River** | `claude-sonnet-4-5-20250514` (Sonnet 4.5) |
+| Agent | Model | Starting Location |
+|-------|-------|-------------------|
+| **Ember** | Sonnet 4.5 | Workshop |
+| **Sage** | Opus 4.5 | Library |
+| **River** | Sonnet 4.5 | Riverbank |
 
 The provider reads `agent.model.id` for each turn.
+
+### Locations
+
+The village has 6 locations forming a connected graph:
+
+```
+                workshop
+                   │
+residential ─── town_square ─── library
+                   │
+                garden
+                   │
+               riverbank
+```
+
+- **Town Square** - The heart of the village, central hub
+- **Workshop** - Ember's domain, craft and creation
+- **Library** - Sage's sanctuary, knowledge and contemplation
+- **Residential** - Cottages and homes
+- **Garden** - Cultivated nature, flowers and herbs
+- **Riverbank** - River's namesake, where village meets water
 
 ### The Interpreter Pattern
 

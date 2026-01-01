@@ -45,14 +45,16 @@ Location-based shared files that agents can read/write.
 ```python
 # Location -> shared directories
 LOCATION_SHARED_DIRS = {
-    "town_square": ["bulletin_board"],
-    "library": ["reading_room"],
-    "workshop": ["projects"],
-    ...
+    "town_square": ["town_square", "bulletin_board"],
+    "workshop": ["workshop"],
+    "library": ["library"],
+    "residential": ["residential"],
+    "garden": ["garden"],
+    "riverbank": ["riverbank"],
 }
 ```
 
-Key functions:
+Each location has a `description.md` file that agents can edit to shape how the location is described. Key functions:
 - `sync_shared_files_in(agent_dir, location)` - Copy shared files to agent's `./shared/`
 - `sync_shared_files_out(agent_dir, location)` - Copy agent's changes back
 - `get_shared_file_list(agent_dir)` - List files for prompt
