@@ -33,7 +33,7 @@ class TestMovementExtraction:
     async def test_explicit_movement_to_garden(self, haiku_interpreter):
         """Agent explicitly walking to garden."""
         narrative = SAMPLE_NARRATIVES["movement_to_garden"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.movement is not None
         assert "garden" in result.movement.lower()
@@ -42,7 +42,7 @@ class TestMovementExtraction:
     async def test_explicit_movement_to_library(self, haiku_interpreter):
         """Agent explicitly walking to library."""
         narrative = SAMPLE_NARRATIVES["movement_to_library"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.movement is not None
         assert "library" in result.movement.lower()
@@ -51,7 +51,7 @@ class TestMovementExtraction:
     async def test_explicit_movement_to_workshop(self, haiku_interpreter_in_library):
         """Agent explicitly walking to workshop from library."""
         narrative = SAMPLE_NARRATIVES["movement_to_workshop"]
-        result = await haiku_interpreter_in_library.interpret(narrative)
+        result, _ = await haiku_interpreter_in_library.interpret(narrative)
 
         assert result.movement is not None
         assert "workshop" in result.movement.lower()
@@ -60,7 +60,7 @@ class TestMovementExtraction:
     async def test_no_movement_when_staying_put(self, haiku_interpreter):
         """Agent explicitly staying in place should not report movement."""
         narrative = SAMPLE_NARRATIVES["staying_put"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.movement is None
 
@@ -68,7 +68,7 @@ class TestMovementExtraction:
     async def test_no_movement_when_just_thinking_about_moving(self, haiku_interpreter):
         """Thinking about moving but not actually moving."""
         narrative = SAMPLE_NARRATIVES["thinking_about_moving"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Should NOT detect movement - just thinking about it
         assert result.movement is None
@@ -86,7 +86,7 @@ class TestMoodExtraction:
     async def test_detects_peaceful_mood(self, haiku_interpreter):
         """Peaceful mood should be detected."""
         narrative = SAMPLE_NARRATIVES["peaceful_mood"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.mood_expressed is not None
         # Accept variations: peaceful, calm, content, serene
@@ -97,7 +97,7 @@ class TestMoodExtraction:
     async def test_detects_contemplative_mood(self, haiku_interpreter):
         """Contemplative mood should be detected."""
         narrative = SAMPLE_NARRATIVES["contemplative_mood"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.mood_expressed is not None
         mood_lower = result.mood_expressed.lower()
@@ -107,7 +107,7 @@ class TestMoodExtraction:
     async def test_detects_joyful_mood(self, haiku_interpreter):
         """Joyful mood should be detected."""
         narrative = SAMPLE_NARRATIVES["joyful_mood"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.mood_expressed is not None
         mood_lower = result.mood_expressed.lower()
@@ -117,7 +117,7 @@ class TestMoodExtraction:
     async def test_detects_tired_mood(self, haiku_interpreter):
         """Tired mood should be detected."""
         narrative = SAMPLE_NARRATIVES["tired_mood"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.mood_expressed is not None
         mood_lower = result.mood_expressed.lower()
@@ -136,7 +136,7 @@ class TestActionExtraction:
     async def test_single_action_detected(self, haiku_interpreter):
         """Single action narrative should detect one action."""
         narrative = SAMPLE_NARRATIVES["single_action"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert len(result.actions_described) >= 1
         # Should mention sketching or drawing
@@ -147,7 +147,7 @@ class TestActionExtraction:
     async def test_multiple_actions_detected(self, haiku_interpreter):
         """Multiple actions should be detected separately."""
         narrative = SAMPLE_NARRATIVES["multiple_actions"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Should detect at least 2 of the 3 actions
         assert len(result.actions_described) >= 2
@@ -156,7 +156,7 @@ class TestActionExtraction:
     async def test_working_on_project(self, haiku_interpreter):
         """Working on a project should register as action(s)."""
         narrative = SAMPLE_NARRATIVES["working_on_project"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert len(result.actions_described) >= 1
         all_actions = " ".join(result.actions_described).lower()
@@ -166,7 +166,7 @@ class TestActionExtraction:
     async def test_reading_action(self, haiku_interpreter_in_library):
         """Reading should be detected as an action."""
         narrative = SAMPLE_NARRATIVES["reading"]
-        result = await haiku_interpreter_in_library.interpret(narrative)
+        result, _ = await haiku_interpreter_in_library.interpret(narrative)
 
         assert len(result.actions_described) >= 1
         all_actions = " ".join(result.actions_described).lower()
@@ -185,7 +185,7 @@ class TestSleepDetection:
     async def test_going_to_sleep_detected(self, haiku_interpreter):
         """Going to sleep should be detected."""
         narrative = SAMPLE_NARRATIVES["going_to_sleep"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.wants_to_sleep is True
 
@@ -193,7 +193,7 @@ class TestSleepDetection:
     async def test_resting_not_sleeping(self, haiku_interpreter):
         """Just resting (not sleeping) should NOT set wants_to_sleep."""
         narrative = SAMPLE_NARRATIVES["just_resting"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Resting/taking a break is NOT sleep
         assert result.wants_to_sleep is False
@@ -202,7 +202,7 @@ class TestSleepDetection:
     async def test_energy_restored_not_sleeping(self, haiku_interpreter):
         """Being refreshed after rest should not indicate sleeping."""
         narrative = SAMPLE_NARRATIVES["energy_restored"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result.wants_to_sleep is False
 
@@ -219,7 +219,7 @@ class TestGroupConversation:
     async def test_suggests_bob_as_next_speaker(self, haiku_interpreter_with_others):
         """Directly addressing Bob should suggest Bob as next speaker."""
         narrative = SAMPLE_NARRATIVES["address_bob"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         assert result.suggested_next_speaker is not None
         assert result.suggested_next_speaker.lower() == "bob"
@@ -228,7 +228,7 @@ class TestGroupConversation:
     async def test_suggests_carol_as_next_speaker(self, haiku_interpreter_with_others):
         """Directly addressing Carol should suggest Carol as next speaker."""
         narrative = SAMPLE_NARRATIVES["address_carol"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         assert result.suggested_next_speaker is not None
         assert result.suggested_next_speaker.lower() == "carol"
@@ -239,7 +239,7 @@ class TestGroupConversation:
     ):
         """General group address may or may not suggest specific speaker."""
         narrative = SAMPLE_NARRATIVES["group_general"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         # This is okay either way - general address doesn't require suggested_next_speaker
         # Just verify it doesn't crash
@@ -257,7 +257,7 @@ class TestComplexNarratives:
     async def test_complex_morning_routine(self, haiku_interpreter):
         """Complex morning narrative with movement and actions."""
         narrative = SAMPLE_NARRATIVES["complex_morning"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Should detect movement to library
         assert result.movement is not None
@@ -270,7 +270,7 @@ class TestComplexNarratives:
     async def test_complex_social_interaction(self, haiku_interpreter_in_garden):
         """Complex social narrative with movement and conversation intent."""
         narrative = SAMPLE_NARRATIVES["complex_social"]
-        result = await haiku_interpreter_in_garden.interpret(narrative)
+        result, _ = await haiku_interpreter_in_garden.interpret(narrative)
 
         # Should detect approach/movement intent
         # May or may not report as movement depending on interpretation
@@ -283,7 +283,7 @@ class TestComplexNarratives:
     async def test_complex_transition(self, haiku_interpreter):
         """Transition narrative: ending conversation and moving."""
         narrative = SAMPLE_NARRATIVES["complex_transition"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Should detect movement to workshop OR actions (LLM may interpret differently)
         # The interpreter sometimes focuses on the actions rather than movement
@@ -307,7 +307,7 @@ class TestEdgeCases:
     async def test_empty_narrative(self, haiku_interpreter):
         """Empty narrative should be handled gracefully."""
         narrative = SAMPLE_NARRATIVES["empty"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         # Should return a result (possibly with no observations)
         assert result is not None
@@ -317,7 +317,7 @@ class TestEdgeCases:
     async def test_very_short_narrative(self, haiku_interpreter):
         """Very short narrative should be handled."""
         narrative = SAMPLE_NARRATIVES["very_short"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result is not None
         # "I wait." - might detect waiting as an action
@@ -327,7 +327,7 @@ class TestEdgeCases:
     async def test_very_long_narrative(self, haiku_interpreter):
         """Very long narrative should be processed without issues."""
         narrative = SAMPLE_NARRATIVES["very_long"]
-        result = await haiku_interpreter.interpret(narrative)
+        result, _ = await haiku_interpreter.interpret(narrative)
 
         assert result is not None
         # Long narrative should produce some observations
@@ -346,7 +346,7 @@ class TestConversationIntent:
     async def test_invite_narrative(self, haiku_interpreter_with_others):
         """Narrative inviting someone should be processed."""
         narrative = SAMPLE_NARRATIVES["invite_bob"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         # The interpreter observes the narrative
         # Conversation invites are handled by agent tools, not interpreter
@@ -356,7 +356,7 @@ class TestConversationIntent:
     async def test_conversation_response(self, haiku_interpreter_with_others):
         """Conversational response narrative."""
         narrative = SAMPLE_NARRATIVES["conversation_response"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         assert result is not None
         # May have actions (listening, speaking)
@@ -365,7 +365,7 @@ class TestConversationIntent:
     async def test_mid_conversation_action(self, haiku_interpreter_with_others):
         """Action during conversation should be detected."""
         narrative = SAMPLE_NARRATIVES["mid_conversation_action"]
-        result = await haiku_interpreter_with_others.interpret(narrative)
+        result, _ = await haiku_interpreter_with_others.interpret(narrative)
 
         assert len(result.actions_described) >= 1
         # Should mention showing something or notebook
@@ -393,7 +393,7 @@ async def test_common_narratives_parse_without_error(
 ):
     """All common narratives should parse without errors."""
     narrative = SAMPLE_NARRATIVES[narrative_key]
-    result = await haiku_interpreter.interpret(narrative)
+    result, _ = await haiku_interpreter.interpret(narrative)
 
     assert result is not None
     assert result.narrative == narrative

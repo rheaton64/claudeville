@@ -141,11 +141,30 @@ class InterpretPhase(BasePhase):
             and not a.is_sleeping
         ]
 
+        # Get conversation context if in a conversation
+        conversation_participants: list[str] | None = None
+        conversation_history: list[dict] | None = None
+        conversations = ctx.get_conversations_for_agent(agent_name)
+        if conversations:
+            conv = conversations[0]  # Primary conversation
+            conversation_participants = sorted(conv.participants)  # Sort for consistent ordering
+            # Get last 5 turns of history
+            history_turns = conv.history[-5:] if conv.history else []
+            conversation_history = [
+                {
+                    "speaker": t.speaker,
+                    "narrative": t.narrative_with_tools or t.narrative,
+                }
+                for t in history_turns
+            ]
+
         # Create interpreter
         interpreter = NarrativeInterpreter(
             current_location=agent.location,
             available_paths=available_paths,
             present_agents=present_agents,
+            conversation_participants=conversation_participants,
+            conversation_history=conversation_history,
         )
 
         # Run interpretation

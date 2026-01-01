@@ -87,6 +87,8 @@ class NarrativeInterpreter:
         current_location: str,
         available_paths: list[str],
         present_agents: list[str],
+        conversation_participants: list[str] | None = None,
+        conversation_history: list[dict] | None = None,
         client: anthropic.AsyncAnthropic | None = None,
         model: str = "claude-haiku-4-5-20251001",
     ):
@@ -97,12 +99,16 @@ class NarrativeInterpreter:
             current_location: Where the agent is
             available_paths: Locations they can move to
             present_agents: Other agents at this location
+            conversation_participants: Participants in the current conversation (if any)
+            conversation_history: Last N turns of conversation [{speaker, narrative}]
             client: Anthropic client (creates one if not provided)
             model: Model to use for interpretation (default: Haiku)
         """
         self.current_location = current_location
         self.available_paths = available_paths
         self.present_agents = present_agents
+        self.conversation_participants = conversation_participants
+        self.conversation_history = conversation_history
         # Wrap with LangSmith for automatic tracing (if LANGSMITH_TRACING=true)
         self.client = client or wrap_anthropic(anthropic.AsyncAnthropic())
         self.model = model
@@ -188,10 +194,17 @@ class NarrativeInterpreter:
         paths_str = ", ".join(self.available_paths) if self.available_paths else "none"
         present_str = ", ".join(self.present_agents) if self.present_agents else "no one"
 
-        return f"""Context:
+        base_context = f"""Context:
 - Current location: {self.current_location}
 - Available paths to other locations: {paths_str}
-- Others present at this location: {present_str}
+- Others present at this location: {present_str}"""
+
+        # Add conversation context if in a conversation
+        conversation_section = self._build_conversation_section()
+        if conversation_section:
+            base_context += "\n\n" + conversation_section
+
+        return f"""{base_context}
 
 The agent's narrative:
 \"\"\"
@@ -199,6 +212,32 @@ The agent's narrative:
 \"\"\"
 
 Read this narrative and use your tools to report what you observed."""
+
+    def _build_conversation_section(self) -> str:
+        """Build the conversation context section for the interpreter prompt."""
+        if not self.conversation_participants:
+            return ""
+
+        parts = ["---", "A conversation is happening."]
+        parts.append(f"Participants: {', '.join(self.conversation_participants)}")
+
+        # Add recent conversation history
+        if self.conversation_history:
+            parts.append("")
+            parts.append("Recent conversation:")
+            for turn in self.conversation_history:
+                speaker = turn.get("speaker", "Unknown")
+                turn_narrative = turn.get("narrative", "")
+                parts.append(f"{speaker}:")
+                parts.append(turn_narrative)
+                parts.append("")
+
+        # Add group conversation reminder if 3+ participants
+        if len(self.conversation_participants) >= 3:
+            parts.append("This is a group conversation. Please use report_next_speaker to suggest who should speak next, and try to spread speaking time fairly among all participants.")
+
+        parts.append("---")
+        return "\n".join(parts)
 
     def _process_tool_call(
         self,
