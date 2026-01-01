@@ -393,8 +393,12 @@ class EventStore:
                 if event.agent in agents:
                     agent = agents[event.agent]
                     old_usage = agent.token_usage
-                    # Context window = cache_read (cumulative) + input (per-turn)
-                    context_window_size = event.cache_read_input_tokens + event.input_tokens
+                    # Context window = cache_read (cumulative) + input (per-turn) + cache_creation (per-turn)
+                    context_window_size = (
+                        event.cache_read_input_tokens +
+                        event.input_tokens +
+                        event.cache_creation_input_tokens
+                    )
                     new_usage = TokenUsage(
                         session_tokens=context_window_size,
                         total_input_tokens=old_usage.total_input_tokens + event.input_tokens,

@@ -13,7 +13,7 @@ class TokenUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     # Context window size - the current size of the agent's context
-    # Set to cache_read_input_tokens + input_tokens from SDK each turn
+    # Set to cache_read + input + cache_creation tokens from SDK each turn
     # Used for compaction threshold decisions (100K/150K)
     session_tokens: int = 0
 

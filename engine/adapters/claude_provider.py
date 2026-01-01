@@ -602,9 +602,11 @@ class ClaudeProvider:
                     cache_read = usage.get('cache_read_input_tokens', 0)
 
                     # Context window size (for compaction threshold)
-                    # cache_read_input_tokens IS cumulative and represents total context
-                    # SDK tracks this server-side and persists across session resumes
-                    context_window_size = cache_read + input_tokens
+                    # Includes all tokens being processed this turn:
+                    # - cache_read: tokens from previous turns (cumulative)
+                    # - input: new user input tokens (per-turn)
+                    # - cache_creation: new tokens being cached (per-turn)
+                    context_window_size = cache_read + input_tokens + cache_creation
                     self._token_counts[agent_name] = context_window_size
 
                     logger.debug(

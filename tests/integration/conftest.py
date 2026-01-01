@@ -274,11 +274,14 @@ def haiku_engine(temp_village: Path) -> "VillageEngine":
 
     Use for behavior validation tests.
     Marked slow/expensive - skip in fast CI runs.
+
+    Note: Model is configured per-agent in create_test_village(),
+    not in the provider constructor.
     """
     from engine.engine import VillageEngine
     from engine.adapters import ClaudeProvider
 
-    provider = ClaudeProvider(model="claude-haiku-4-5-20251001")
+    provider = ClaudeProvider()
 
     engine = VillageEngine(
         village_root=temp_village,

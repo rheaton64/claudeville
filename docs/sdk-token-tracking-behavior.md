@@ -82,7 +82,7 @@ These grow with each turn and represent the total context being processed:
 | Metric | Turn 1 | Turn 2 | Turn 3 | Behavior |
 |--------|--------|--------|--------|----------|
 | `cache_read_input_tokens` | 14781 | 15112 | 15132 | **Cumulative** |
-| context_size (cache_read + input) | 14784 | 15115 | 15135 | **Cumulative** |
+| context_size (cache_read + input + cache_creation) | 15115 | 15135 | 15155 | **Cumulative** |
 
 **Use case:** Compaction threshold decisions (100K/150K limits).
 
@@ -116,7 +116,7 @@ Turn 6: context_size = 15195  (+20)
 
 The SDK tracks `cache_read_input_tokens` server-side and continues after resume. As long as we use the same `session_id`, the compaction threshold logic will work correctly.
 
-**Recommendation:** Use `cache_read_input_tokens + input_tokens` as the context window size for compaction threshold checks.
+**Recommendation:** Use `cache_read_input_tokens + input_tokens + cache_creation_input_tokens` as the context window size for compaction threshold checks.
 
 ### 2. Token Usage Tracking (Billing/Stats)
 
@@ -168,7 +168,12 @@ Context window size comes directly from the SDK each turn:
 
 ```python
 # CORRECT - context window is set directly, not accumulated
-context_window_size = usage['cache_read_input_tokens'] + usage['input_tokens']
+# Includes cache_creation because those tokens are being processed this turn
+context_window_size = (
+    usage['cache_read_input_tokens'] +
+    usage['input_tokens'] +
+    usage['cache_creation_input_tokens']
+)
 session_tokens = context_window_size  # SET, not add
 
 # Billing totals are accumulated from per-turn values
@@ -178,11 +183,15 @@ total_output_tokens += usage['output_tokens']
 
 ### Compaction Threshold
 
-Use the cumulative cache metric:
+Use all tokens being processed this turn:
 
 ```python
 # For compaction threshold decisions
-context_window_size = usage['cache_read_input_tokens'] + usage['input_tokens']
+context_window_size = (
+    usage['cache_read_input_tokens'] +
+    usage['input_tokens'] +
+    usage['cache_creation_input_tokens']
+)
 
 if context_window_size >= CRITICAL_THRESHOLD:  # 150K
     trigger_compaction(critical=True)
@@ -214,10 +223,10 @@ uv run python tests/smoke_test_crash_resume.py <session_id>  # Resume
 
 | Metric | Type | Use Case | Persists Across Resume? |
 |--------|------|----------|------------------------|
-| `input_tokens` | Per-turn | Billing, usage stats | N/A (add to our tracking) |
+| `input_tokens` | Per-turn | Billing, usage stats, context window | N/A (add to our tracking) |
 | `output_tokens` | Per-turn | Billing, usage stats | N/A (add to our tracking) |
 | `cache_read_input_tokens` | Cumulative | Context window size, compaction | Yes (SDK handles) |
-| `cache_creation_input_tokens` | Per-turn | Cost tracking (cache writes) | N/A (add to our tracking) |
+| `cache_creation_input_tokens` | Per-turn | Cost tracking, context window | N/A (add to our tracking) |
 | `total_cost_usd` | Cumulative | Cost tracking | Yes (SDK handles) |
 
 ---

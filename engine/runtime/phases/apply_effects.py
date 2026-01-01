@@ -999,8 +999,13 @@ class ApplyEffectsPhase(BasePhase):
 
         old_usage = agent.token_usage
 
-        # Context window size from SDK (cache_read is cumulative, input is per-turn)
-        context_window_size = effect.cache_read_input_tokens + effect.input_tokens
+        # Context window size from SDK - all tokens being processed:
+        # cache_read (cumulative) + input (per-turn) + cache_creation (per-turn)
+        context_window_size = (
+            effect.cache_read_input_tokens +
+            effect.input_tokens +
+            effect.cache_creation_input_tokens
+        )
 
         # Update context window and cumulative totals
         new_usage = TokenUsage(
