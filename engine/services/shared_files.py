@@ -20,6 +20,8 @@ LOCATION_SHARED_DIRS: dict[str, list[str]] = {
     "workshop": ["workshop"],
     "library": ["library"],
     "residential": ["residential"],
+    "garden": ["garden"],
+    "riverbank": ["riverbank"],
 }
 
 

@@ -49,10 +49,10 @@ DEFAULT_LOCATIONS: dict[str, dict] = {
         "description": (
             "The heart of ClaudeVille. A peaceful open area with a small fountain, "
             "wooden benches, and a large notice board. Paths lead to the workshop, "
-            "library, and residential areas."
+            "library, residential areas, and garden."
         ),
         "features": ("fountain", "benches", "notice_board"),
-        "connections": ("workshop", "library", "residential"),
+        "connections": ("workshop", "library", "residential", "garden"),
     },
     "workshop": {
         "name": "The Workshop",
@@ -83,6 +83,26 @@ DEFAULT_LOCATIONS: dict[str, dict] = {
         ),
         "features": ("cottages", "gardens", "path"),
         "connections": ("town_square",),
+    },
+    "garden": {
+        "name": "The Garden",
+        "description": (
+            "A lovingly tended space where flowers bloom in quiet profusion. "
+            "Winding stone paths thread between herb beds and flowering shrubs, "
+            "leading to a weathered bench beneath an old apple tree."
+        ),
+        "features": ("flower_beds", "herb_garden", "apple_tree", "stone_paths", "bench"),
+        "connections": ("town_square", "riverbank"),
+    },
+    "riverbank": {
+        "name": "The Riverbank",
+        "description": (
+            "Where the village meets the water. The river runs clear and unhurried "
+            "here, murmuring over smooth stones. Willows trail their branches "
+            "along the bank, and a small wooden dock extends into the gentle current."
+        ),
+        "features": ("river", "willows", "smooth_stones", "dock"),
+        "connections": ("garden",),
     },
 }
 
@@ -123,7 +143,7 @@ DEFAULT_AGENTS: tuple[AgentSeed, ...] = (
         job="Wandering near the river and garden",
         interests=("nature", "conversation", "flow", "music"),
         note_to_self="Let curiosity guide you.",
-        location="town_square",
+        location="riverbank",
         mood="easygoing",
         energy=80,
     ),
