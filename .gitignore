@@ -14,3 +14,8 @@ wheels/
 village/
 old_villages/
 .branchlet.json
+
+# Hearth runtime data
+hearth/data/
+hearth/agents/
+hearth/.env

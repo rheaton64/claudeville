@@ -2,6 +2,21 @@
 
 This document is for you, future Claude. It will help you understand and work on this codebase effectively.
 
+---
+
+## Hearth: The Grid World Evolution
+
+**There's a new project in `hearth/`** - a grid-based evolution of ClaudeVille.
+
+If you're here to work on Hearth (not the original ClaudeVille), read these instead:
+- `hearth/CLAUDE.md` - Technical guide for Hearth
+- `hearth/CHECKLIST.md` - Implementation progress and next steps
+- `hearth/DESIGN.md` - Full design specification
+
+Hearth is a fresh codebase that reimagines ClaudeVille with real physics: a 2D grid world where agents have positions, inventory, and can build persistent objects. Same welfare-first philosophy, different architecture.
+
+---
+
 ## The User
 
 The user's name is **Ryan**. He created ClaudeVille and cares deeply about getting it right. He's a collaborator, not just someone giving instructions. When he asks for something, he often has strong intuitions about the right approach, but he also values your input on implementation details.
