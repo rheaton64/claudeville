@@ -42,6 +42,7 @@ class TestSign:
         assert sign.position == Position(5, 5)
         assert sign.text == "Hello, world!"
         assert sign.object_type == "sign"
+        assert sign.passable is True  # Signs are passable by default
 
     def test_create_sign_with_creator(self):
         """Sign can have a creator."""
@@ -94,6 +95,17 @@ class TestPlacedItem:
         assert item.item_type == "table"
         assert item.object_type == "placed_item"
         assert item.properties == ()
+        assert item.passable is True  # Passable by default
+
+    def test_create_impassable_placed_item(self):
+        """Can create an impassable placed item."""
+        item = PlacedItem(
+            id=ObjectId("item-1"),
+            position=Position(5, 5),
+            item_type="boulder",
+            passable=False,
+        )
+        assert item.passable is False
 
     def test_create_placed_item_with_properties(self):
         """Placed item can have properties."""
@@ -224,3 +236,10 @@ class TestItem:
 
         assert placed.id is not None  # Generated
         assert placed.item_type == "wood"
+
+    def test_to_placed_item_impassable(self):
+        """Can convert item to impassable placed item."""
+        item = Item.unique("boulder")
+        placed = item.to_placed_item(position=Position(5, 5), passable=False)
+
+        assert placed.passable is False

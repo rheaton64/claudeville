@@ -23,6 +23,7 @@ class WorldObject(BaseModel):
     """Base for all persistent objects in the world.
 
     World objects have a position and track their creator.
+    Some objects block movement (passable=False), others can be walked through.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -31,6 +32,7 @@ class WorldObject(BaseModel):
     position: Position
     created_by: AgentName | None = None
     created_tick: int = 0
+    passable: bool = True  # Can agents walk through this object's cell?
 
 
 class Sign(WorldObject):
@@ -128,6 +130,7 @@ class Item(BaseModel):
         position: Position,
         created_by: AgentName | None = None,
         created_tick: int = 0,
+        passable: bool = True,
     ) -> PlacedItem:
         """Convert this item to a placed item in the world."""
         return PlacedItem(
@@ -137,6 +140,7 @@ class Item(BaseModel):
             created_tick=created_tick,
             item_type=self.item_type,
             properties=self.properties,
+            passable=passable,
         )
 
 
