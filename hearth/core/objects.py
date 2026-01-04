@@ -54,15 +54,23 @@ class PlacedItem(WorldObject):
 
     Unlike items in inventory, placed items occupy a world position
     and can be interacted with by any agent.
+
+    For stackable resources, quantity tracks how many are in this pile.
+    For unique items, quantity is always 1.
     """
 
     object_type: Literal["placed_item"] = "placed_item"
     item_type: str
     properties: tuple[str, ...] = ()
+    quantity: int = 1
 
     def with_properties(self, *props: str) -> PlacedItem:
         """Return a new placed item with updated properties."""
         return self.model_copy(update={"properties": props})
+
+    def with_quantity(self, quantity: int) -> PlacedItem:
+        """Return a new placed item with updated quantity."""
+        return self.model_copy(update={"quantity": quantity})
 
 
 class Item(BaseModel):
@@ -140,6 +148,7 @@ class Item(BaseModel):
             created_tick=created_tick,
             item_type=self.item_type,
             properties=self.properties,
+            quantity=self.quantity,
             passable=passable,
         )
 

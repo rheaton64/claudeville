@@ -1,0 +1,41 @@
+# Hearth World Settings
+#
+# Centralizes configurable values used across the simulation.
+# Values here can be overridden by code for testing or special scenarios.
+
+vision:
+  # How far agents can see (radius in cells, so 3 = 7x7 grid)
+  default_radius: 3
+  # Multiplier for night vision (0.6 = 60% of normal)
+  night_modifier: 0.6
+
+scheduling:
+  # Extra buffer around vision radius for clustering
+  # Agents within (vision_radius + cluster_buffer) may interact
+  cluster_buffer: 2
+  # How many ticks before an unanswered invitation expires
+  invite_expiry_ticks: 2
+
+world:
+  # Default world dimensions (used by --init)
+  default_width: 500
+  default_height: 500
+
+terrain_generation:
+  # WFC batch size (higher = faster but more memory)
+  batch_size: 2000
+  # How often to snapshot for backtracking
+  snapshot_interval: 10000
+  # Max backtracks before full restart
+  max_backtracks: 50
+  # Full restarts before giving up
+  max_retries: 10
+
+agent_placement:
+  # Distance range between agents (Manhattan distance)
+  min_distance: 30
+  max_distance: 60
+  # Search radius from world center
+  search_radius: 100
+  # Max attempts to find valid positions
+  max_attempts: 100

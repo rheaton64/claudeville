@@ -1,0 +1,345 @@
+# Hearth Crafting Recipes
+#
+# Each recipe defines how materials can be transformed through crafting actions.
+# Action types: combine (mix items), work (shape material), apply (use tool/heat)
+#
+# Schema:
+#   name: output item type
+#   action: combine | work | apply
+#   inputs: list of required input item types
+#           - for combine: items to mix (order-independent)
+#           - for work: single material
+#           - for apply: [tool_or_heat_source, target] (order matters!)
+#   technique: technique name (for work actions only)
+#   output_quantity: how many items produced (default: 1)
+#   output_stackable: whether output stacks (default: true)
+#   properties: list of properties on output item
+#   discoveries: hints about further crafting possibilities
+#   description: flavor text for the recipe
+
+recipes:
+  # ==========================================================================
+  # Basic Material Processing
+  # ==========================================================================
+
+  - name: planks
+    action: work
+    inputs: [wood]
+    technique: split
+    output_quantity: 4
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "could be split further into sticks"
+      - "useful for building and crafting"
+    description: "Split wood into usable planks"
+
+  - name: stick
+    action: work
+    inputs: [planks]
+    technique: split
+    output_quantity: 4
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "combines well with stone for tools"
+    description: "Split planks into thin sticks"
+
+  - name: cobblestone
+    action: work
+    inputs: [stone]
+    technique: break
+    output_quantity: 2
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "smaller pieces are easier to shape"
+      - "good for tool heads"
+    description: "Break stone into workable pieces"
+
+  - name: fiber
+    action: work
+    inputs: [grass]
+    technique: strip
+    output_quantity: 2
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "fibers can be combined into rope"
+    description: "Strip grass into useful fibers"
+
+  - name: sand
+    action: work
+    inputs: [stone]
+    technique: grind
+    output_quantity: 2
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "sand can be used for smoothing"
+    description: "Grind stone into fine sand"
+
+  # ==========================================================================
+  # Basic Combinations
+  # ==========================================================================
+
+  - name: rope
+    action: combine
+    inputs: [fiber, fiber]
+    output_quantity: 1
+    output_stackable: true
+    properties: []
+    discoveries:
+      - "rope is useful for binding and carrying"
+    description: "Twist fibers together into rope"
+
+  - name: wet_clay
+    action: combine
+    inputs: [clay, water]
+    output_quantity: 1
+    output_stackable: true
+    properties: [malleable]
+    discoveries:
+      - "can be shaped while wet"
+    description: "Mix clay with water to make it workable"
+
+  - name: flint
+    action: combine
+    inputs: [stone, stone]
+    output_quantity: 1
+    output_stackable: true
+    properties: [sharp]
+    discoveries:
+      - "sharp edge could be useful"
+      - "might spark when struck"
+    description: "Strike stones together to knap flint"
+
+  # ==========================================================================
+  # Tools - Stone
+  # ==========================================================================
+
+  - name: stone_axe
+    action: combine
+    inputs: [cobblestone, stick]
+    output_quantity: 1
+    output_stackable: false
+    properties: [tool, sharp, chopping]
+    discoveries:
+      - "good for cutting wood"
+    description: "Bind stone to stick for chopping"
+
+  - name: stone_pickaxe
+    action: combine
+    inputs: [cobblestone, cobblestone, stick]
+    output_quantity: 1
+    output_stackable: false
+    properties: [tool, pointed, mining]
+    discoveries:
+      - "good for breaking stone"
+    description: "Bind two pointed stones to stick for mining"
+
+  - name: stone_knife
+    action: combine
+    inputs: [flint, stick]
+    output_quantity: 1
+    output_stackable: false
+    properties: [tool, sharp, cutting]
+    discoveries:
+      - "good for precise cutting"
+      - "useful for carving"
+    description: "Bind sharp flint to handle"
+
+  # ==========================================================================
+  # Tools - Wood
+  # ==========================================================================
+
+  - name: wooden_club
+    action: work
+    inputs: [wood]
+    technique: carve
+    output_quantity: 1
+    output_stackable: false
+    properties: [tool, blunt]
+    discoveries:
+      - "simple but effective"
+    description: "Carve wood into a sturdy club"
+
+  - name: wooden_bowl
+    action: work
+    inputs: [wood]
+    technique: hollow
+    output_quantity: 1
+    output_stackable: false
+    properties: [container]
+    discoveries:
+      - "can hold liquids and small items"
+    description: "Hollow out wood into a bowl"
+
+  # ==========================================================================
+  # Clay/Pottery Chain
+  # ==========================================================================
+
+  - name: clay_ball
+    action: work
+    inputs: [wet_clay]
+    technique: shape
+    output_quantity: 2
+    output_stackable: true
+    properties: [malleable]
+    discoveries:
+      - "can be shaped further"
+      - "could be hollowed into a vessel"
+    description: "Shape wet clay into workable balls"
+
+  - name: clay_vessel
+    action: work
+    inputs: [clay_ball]
+    technique: hollow
+    output_quantity: 1
+    output_stackable: false
+    properties: [fragile, container]
+    discoveries:
+      - "fragile - heat might strengthen it"
+    description: "Hollow clay into a vessel shape"
+
+  - name: clay_brick
+    action: work
+    inputs: [wet_clay]
+    technique: flatten
+    output_quantity: 2
+    output_stackable: true
+    properties: [building_material]
+    discoveries:
+      - "heat would make these durable"
+    description: "Flatten wet clay into brick shapes"
+
+  - name: fired_vessel
+    action: apply
+    inputs: [campfire, clay_vessel]
+    output_quantity: 1
+    output_stackable: false
+    properties: [durable, container, waterproof]
+    discoveries:
+      - "heat transforms fragile clay to durable pottery"
+    description: "Place vessel near fire to harden"
+
+  - name: fired_brick
+    action: apply
+    inputs: [campfire, clay_brick]
+    output_quantity: 1
+    output_stackable: true
+    properties: [durable, building_material]
+    discoveries:
+      - "strong building material"
+    description: "Place bricks near fire to harden"
+
+  # ==========================================================================
+  # Light and Fire
+  # ==========================================================================
+
+  - name: torch
+    action: combine
+    inputs: [stick, fiber]
+    output_quantity: 1
+    output_stackable: false
+    properties: [light]
+    discoveries:
+      - "needs to be lit to provide light"
+    description: "Wrap fiber around stick for a torch"
+
+  - name: campfire
+    action: combine
+    inputs: [wood, flint]
+    output_quantity: 1
+    output_stackable: false
+    properties: [light, heat, stationary]
+    discoveries:
+      - "provides warmth and light"
+      - "can be used for cooking"
+    description: "Stack wood and strike flint to start fire"
+
+  # ==========================================================================
+  # Advanced Combinations
+  # ==========================================================================
+
+  - name: basket
+    action: work
+    inputs: [fiber]
+    technique: weave
+    output_quantity: 1
+    output_stackable: false
+    properties: [container, lightweight]
+    discoveries:
+      - "good for carrying gathered items"
+    description: "Weave fibers into a carrying basket"
+
+  - name: fishing_line
+    action: work
+    inputs: [fiber]
+    technique: twist
+    output_quantity: 1
+    output_stackable: true
+    properties: [strong, thin]
+    discoveries:
+      - "could be attached to a pole"
+    description: "Twist fibers into a strong thin line"
+
+  - name: fishing_pole
+    action: combine
+    inputs: [stick, fishing_line]
+    output_quantity: 1
+    output_stackable: false
+    properties: [tool, fishing]
+    discoveries:
+      - "useful near water"
+    description: "Attach line to stick for fishing"
+
+  # ==========================================================================
+  # Carving and Detail Work
+  # ==========================================================================
+
+  - name: wooden_figure
+    action: apply
+    inputs: [stone_knife, wood]
+    output_quantity: 1
+    output_stackable: false
+    properties: [decorative, gift]
+    discoveries:
+      - "a small work of art"
+    description: "Carve wood into a small figure"
+
+  - name: carved_stone
+    action: apply
+    inputs: [stone_pickaxe, stone]
+    output_quantity: 1
+    output_stackable: false
+    properties: [decorative, heavy]
+    discoveries:
+      - "stone holds carvings well"
+    description: "Carve patterns into stone"
+
+  # ==========================================================================
+  # Building Materials
+  # ==========================================================================
+
+  - name: wooden_beam
+    action: work
+    inputs: [wood]
+    technique: shape
+    output_quantity: 2
+    output_stackable: true
+    properties: [building_material, structural]
+    discoveries:
+      - "good for construction"
+    description: "Shape wood into structural beams"
+
+  - name: stone_block
+    action: work
+    inputs: [stone]
+    technique: shape
+    output_quantity: 1
+    output_stackable: true
+    properties: [building_material, heavy]
+    discoveries:
+      - "solid foundation material"
+    description: "Shape stone into a building block"

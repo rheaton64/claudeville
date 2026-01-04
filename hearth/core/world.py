@@ -1,4 +1,4 @@
-"""World models for Hearth: Cell and Grid.
+"""World models for Hearth: Cell, Grid, and WorldState.
 
 The grid uses sparse storage - only non-default cells are stored.
 Walls are properties of cell edges, not separate entities.
@@ -6,10 +6,25 @@ Walls are properties of cell edges, not separate entities.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .types import Position, Direction, Rect, ObjectId
-from .terrain import Terrain
+from .terrain import Terrain, Weather
+
+
+@dataclass(frozen=True)
+class WorldState:
+    """Snapshot of world-level state.
+
+    Contains global world properties that apply across the entire grid.
+    """
+
+    current_tick: int
+    weather: Weather
+    width: int
+    height: int
 
 
 class Cell(BaseModel):
@@ -94,8 +109,8 @@ class Grid(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    width: int = 100
-    height: int = 100
+    width: int = 500
+    height: int = 500
     cells: dict[Position, Cell] = Field(default_factory=dict)
 
     def get_cell(self, pos: Position) -> Cell:

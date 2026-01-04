@@ -1,7 +1,7 @@
 """Event types for Hearth.
 
-Events are the append-only history of everything that happens in the world.
-They're written to JSONL and can be replayed to reconstruct state.
+Events are the append-only audit log of everything that happens in the world.
+Written to JSONL for debugging and analysis. NOT replayed - SQLite is authoritative.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Discriminator
 
-from .types import Position, AgentName, ObjectId, Direction
+from .types import Position, AgentName, ObjectId, Direction, ConversationId
 from .terrain import Weather
 
 
@@ -182,7 +182,7 @@ class ItemCraftedEvent(BaseEvent):
     agent: AgentName
     inputs: tuple[str, ...]
     output: str
-    technique: str
+    technique: str | None = None  # Only set for work actions
 
 
 class ItemTakenEvent(BaseEvent):
@@ -259,24 +259,83 @@ class TimeAdvancedEvent(BaseEvent):
     new_tick: int
 
 
-# --- Conversation Events (for future use) ---
+# --- Conversation Events ---
+
+
+class InvitationSentEvent(BaseEvent):
+    """An agent sent an invitation to conversation."""
+
+    type: Literal["invitation_sent"] = "invitation_sent"
+    inviter: AgentName
+    invitee: AgentName
+    conversation_id: ConversationId
+    privacy: str
+
+
+class InvitationAcceptedEvent(BaseEvent):
+    """An agent accepted a conversation invitation."""
+
+    type: Literal["invitation_accepted"] = "invitation_accepted"
+    agent: AgentName
+    inviter: AgentName
+    conversation_id: ConversationId
+
+
+class InvitationDeclinedEvent(BaseEvent):
+    """An agent declined a conversation invitation."""
+
+    type: Literal["invitation_declined"] = "invitation_declined"
+    agent: AgentName
+    inviter: AgentName
+
+
+class InvitationExpiredEvent(BaseEvent):
+    """A conversation invitation expired without response."""
+
+    type: Literal["invitation_expired"] = "invitation_expired"
+    inviter: AgentName
+    invitee: AgentName
 
 
 class ConversationStartedEvent(BaseEvent):
     """A conversation started between agents."""
 
     type: Literal["conversation_started"] = "conversation_started"
-    conversation_id: str
+    conversation_id: ConversationId
     participants: tuple[AgentName, ...]
-    at_position: Position
     is_private: bool = False
+
+
+class AgentJoinedConversationEvent(BaseEvent):
+    """An agent joined an existing conversation."""
+
+    type: Literal["agent_joined_conversation"] = "agent_joined_conversation"
+    agent: AgentName
+    conversation_id: ConversationId
+
+
+class AgentLeftConversationEvent(BaseEvent):
+    """An agent left a conversation."""
+
+    type: Literal["agent_left_conversation"] = "agent_left_conversation"
+    agent: AgentName
+    conversation_id: ConversationId
+
+
+class ConversationTurnEvent(BaseEvent):
+    """An agent spoke in a conversation."""
+
+    type: Literal["conversation_turn"] = "conversation_turn"
+    conversation_id: ConversationId
+    speaker: AgentName
+    message: str
 
 
 class ConversationEndedEvent(BaseEvent):
     """A conversation ended."""
 
     type: Literal["conversation_ended"] = "conversation_ended"
-    conversation_id: str
+    conversation_id: ConversationId
     reason: str
 
 
@@ -316,7 +375,14 @@ DomainEvent = Annotated[
         WeatherChangedEvent,
         TimeAdvancedEvent,
         # Conversations
+        InvitationSentEvent,
+        InvitationAcceptedEvent,
+        InvitationDeclinedEvent,
+        InvitationExpiredEvent,
         ConversationStartedEvent,
+        AgentJoinedConversationEvent,
+        AgentLeftConversationEvent,
+        ConversationTurnEvent,
         ConversationEndedEvent,
     ],
     Discriminator("type"),

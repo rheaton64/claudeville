@@ -9,6 +9,7 @@ This module defines the core types used throughout the system:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, NewType, NamedTuple
 
@@ -75,7 +76,10 @@ class Position(NamedTuple):
             dx, dy = other.offset
             return Position(self.x + dx, self.y + dy)
         if isinstance(other, tuple) and len(other) == 2:
-            return Position(self.x + other[0], self.y + other[1])
+            dx, dy = other
+            if not isinstance(dx, int) or not isinstance(dy, int):
+                return NotImplemented
+            return Position(self.x + dx, self.y + dy)
         return NotImplemented
 
     def __sub__(self, other: object) -> Position:
@@ -84,7 +88,10 @@ class Position(NamedTuple):
             dx, dy = other.offset
             return Position(self.x - dx, self.y - dy)
         if isinstance(other, tuple) and len(other) == 2:
-            return Position(self.x - other[0], self.y - other[1])
+            dx, dy = other
+            if not isinstance(dx, int) or not isinstance(dy, int):
+                return NotImplemented
+            return Position(self.x - dx, self.y - dy)
         return NotImplemented
 
     def distance_to(self, other: Position) -> int:
@@ -178,3 +185,22 @@ class Rect(NamedTuple):
     def height(self) -> int:
         """Height of the rectangle."""
         return self.max_y - self.min_y + 1
+
+
+# -----------------------------------------------------------------------------
+# Token Usage Tracking
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class TurnTokenUsage:
+    """Token usage for a single agent turn.
+
+    Tracks input/output tokens and cache efficiency.
+    """
+
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    model_id: str

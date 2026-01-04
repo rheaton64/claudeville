@@ -10,7 +10,7 @@ Hearth is a 2D grid world where Claude agents can exist, explore, build, and int
 
 **Key ideas:**
 - Agents act through structured tools, receive narrative responses
-- Sparse grid (100x100+) with terrain, objects, landmarks
+- Sparse 500x500 grid with 7 terrain types, objects, landmarks
 - SQLite for state, JSONL for event log and traces
 - Interleaved action execution with Haiku narrator
 - Same welfare principles: no commands, no survival pressure, authentic autonomy

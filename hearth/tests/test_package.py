@@ -39,10 +39,10 @@ def test_generation_imports():
     import hearth.generation
 
 
-def test_observer_imports():
-    """Test that observer subpackage can be imported."""
-    import hearth.observer
-    import hearth.observer.tui
+def test_observe_imports():
+    """Test that observe subpackage can be imported."""
+    import hearth.observe
+    import hearth.observe.tui
 
 
 def test_logging_config_imports():

@@ -77,16 +77,16 @@ class TestTerrainHelpers:
         assert get_symbol(Terrain.GRASS) == "."
 
     def test_get_symbol_water(self):
-        """Water has water emoji."""
-        assert get_symbol(Terrain.WATER) == "💧"
+        """Water has wavy line symbol."""
+        assert get_symbol(Terrain.WATER) == "≈"
 
     def test_get_symbol_forest(self):
-        """Forest has tree emoji."""
-        assert get_symbol(Terrain.FOREST) == "🌲"
+        """Forest has club symbol."""
+        assert get_symbol(Terrain.FOREST) == "♣"
 
     def test_gather_resource_from_water(self):
-        """Can gather water from water terrain."""
-        assert get_gather_resource(Terrain.WATER) == "water"
+        """Cannot gather water directly - needs a vessel."""
+        assert get_gather_resource(Terrain.WATER) is None
 
     def test_gather_resource_from_forest(self):
         """Can gather wood from forest terrain."""
@@ -97,5 +97,5 @@ class TestTerrainHelpers:
         assert get_gather_resource(Terrain.STONE) == "stone"
 
     def test_gather_resource_from_grass(self):
-        """Cannot gather resources from grass terrain."""
-        assert get_gather_resource(Terrain.GRASS) is None
+        """Can gather grass from grass terrain (for fiber crafting)."""
+        assert get_gather_resource(Terrain.GRASS) == "grass"

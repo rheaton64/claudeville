@@ -160,7 +160,7 @@ The world offers *possibility*, never *necessity*.
 
 ### Scale: Large and Sprawling
 
-The grid is large—100x100 or more—inspired by the Stanford Generative Agents paper and 2D Minecraft. This creates:
+The grid is large—500x500—inspired by the Stanford Generative Agents paper and 2D Minecraft. This creates:
 
 - Real exploration: discovering the world takes time
 - Meaningful journeys: going somewhere is a commitment
@@ -171,13 +171,24 @@ The risk of a large world is isolation. We address this through the **sense of p
 
 ### Terrain
 
-Different terrain types with different properties:
+Seven terrain types form a natural gradient through adjacency rules:
 
-- **Grass**: Common, walkable, things can grow here
-- **Water**: Impassable on foot, reflective, calming
-- **Stone**: Stable, good for building foundations
-- **Sand**: Soft, malleable, at edges of water
-- **Forest**: Dense, provides wood, limits vision
+| Terrain | Symbol | Passable | Gather | Notes |
+|---------|--------|----------|--------|-------|
+| **Water** | ≈ | No | - | Deep water, impassable |
+| **Coast** | ~ | Yes | - | Shallow water, wade-able |
+| **Sand** | : | Yes | clay | Beaches, desert edges |
+| **Grass** | . | Yes | grass | Plains, most common |
+| **Forest** | ♣ | Yes | wood | Wooded areas |
+| **Hill** | ^ | Yes | - | Elevated terrain |
+| **Stone** | ▲ | Yes | stone | Rocky outcrops, mountains |
+
+Adjacency constraints create natural biomes:
+```
+water ↔ coast ↔ sand ↔ grass ↔ forest
+                         ↕       ↕
+                       hill  ↔  stone
+```
 
 The terrain shapes what's possible where. The world has logic.
 
@@ -426,12 +437,11 @@ agents/
 
 - **`discoveries.md`** — Crafting knowledge accumulated through experimentation. "Clay + heat = hardened clay. River stones work for grinding."
 
-- **`.status`** — System-maintained reference file. Current position, time of day, weather. Agent can read it; system updates it each turn.
+- **`.status`** — System-maintained reference file. Current position, time of day, weather, inventory. Agent can read it; system updates it each turn.
 
 **What stays in the simulation (prompt/tools):**
 
 - **Current perception** — What you see right now comes from the simulation, not a file
-- **Inventory** — Authoritative state passed in prompt; file would risk sync issues
 - **Conversations** — Shared social state, not personal files
 
 **Why this matters:**
@@ -503,7 +513,6 @@ Agents have structured actions—not commands to a system, but ways of being in 
 - `journey(destination)` — Begin travel to a known landmark
 
 **Perception:**
-- `look()` — Survey surroundings
 - `examine(thing)` — Inspect something closely
 - `sense_others()` — Feel direction toward other agents
 
@@ -539,8 +548,7 @@ Agents have structured actions—not commands to a system, but ways of being in 
 - `leave_conversation()` — Exit conversation
 
 **State:**
-- `rest()` — Enter low activity
-- `sleep()` — Full rest
+- `sleep()` — Rest until morning
 
 These are **verbs of being**, not commands. The framing in the agent's system prompt emphasizes this: "You can act in the world. When you want something to happen, you act."
 
@@ -804,7 +812,7 @@ SQLite handles constant spatial queries efficiently ("what's in this region?"). 
 
 ### Grid Storage: Sparse
 
-Only non-empty cells are stored. A 100x100 world doesn't require 10,000 records—just the cells that have terrain features, objects, or significance.
+Only non-empty cells are stored. A 500x500 world doesn't require 250,000 records—just the cells that have terrain features, objects, or significance.
 
 ```python
 # Conceptually: position -> cell data
@@ -924,9 +932,15 @@ When agents are within vision radius of each other:
 2. Alternate turns: A acts, B acts, A acts...
 3. Each sees the other's actions before responding
 
-### World Generation: Procedural + Landmarks
+### World Generation: Wave Function Collapse
 
-Algorithm generates base terrain (biomes, rivers, elevation). Specific landmarks placed manually:
+Terrain is generated using the WFC algorithm with adjacency rules. The algorithm:
+- Creates natural gradients (water → coast → sand → grass)
+- Uses self-affinity weights for biome clustering
+- Batches cell collapse for performance
+- Auto-retries on contradictions (WFC can paint itself into corners)
+
+Specific landmarks to be placed after terrain generation:
 - The ancient grove (unique)
 - Ruins (mystery)
 - Crystal caves (rare wonders)
@@ -1110,7 +1124,7 @@ From the original ClaudeVille:
 | Abstract locations | Grid positions |
 | Described movement | Physical movement through space |
 | Narrative objects | Persistent world objects |
-| 6 locations | 10,000+ cells to explore |
+| 6 locations | 250,000 cells to explore (500x500) |
 | Always aware of others | Sense of presence, must find each other |
 | Instant arrival | Journeys through space |
 

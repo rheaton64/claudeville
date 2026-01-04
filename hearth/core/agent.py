@@ -89,7 +89,22 @@ class Journey(BaseModel):
         destination: JourneyDestination,
         path: tuple[Position, ...],
     ) -> Journey:
-        """Create a new journey with the given path."""
+        """Create a new journey with the given path.
+
+        Args:
+            destination: Where the journey is headed
+            path: Positions to traverse (must have at least 2: start and end)
+
+        Returns:
+            New Journey instance
+
+        Raises:
+            ValueError: If path has fewer than 2 positions
+        """
+        if len(path) < 2:
+            raise ValueError(
+                "Journey path must have at least 2 positions (start and end)"
+            )
         return cls(destination=destination, path=path, progress=0)
 
 
